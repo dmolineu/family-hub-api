@@ -15,3 +15,8 @@ spring:
 
   flyway:
     enabled: false
+
+security:
+  # Opens /h2-console and allows same-origin framing; dev only.
+  h2-console:
+    enabled: true

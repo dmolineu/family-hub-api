@@ -22,6 +22,14 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.Arrays;
 import java.util.List;
 
+/**
+ * HTTP security for the API. Stateless JWT auth; every request outside the public
+ * auth/health/OAuth-callback paths must carry a valid token.
+ *
+ * <p>The H2 console is a dev-only tool. It is closed and framing is denied unless
+ * {@code security.h2-console.enabled} is true (set only by the dev profile), because the
+ * upstream default left the console open and frame-options disabled in production.
+ */
 @Configuration
 @EnableMethodSecurity
 @EnableWebSecurity
@@ -34,25 +42,35 @@ public class SecurityConfig {
     @Value("${cors.allowed-origins}")
     private String allowedOrigins;
 
+    @Value("${security.h2-console.enabled:false}")
+    private boolean h2ConsoleEnabled;
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
             .sessionManagement( s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .headers(headers -> headers
-                .frameOptions(frameOptions -> frameOptions.disable()) // Required for H2 console
-            )
+            .headers(headers -> {
+                if (h2ConsoleEnabled) {
+                    // The console UI is frame-based; same-origin is enough for it.
+                    headers.frameOptions(frameOptions -> frameOptions.sameOrigin());
+                }
+                // Otherwise Spring Security's default X-Frame-Options: DENY stands.
+            })
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(requestLoggingFilter, JwtAuthenticationFilter.class)
             .exceptionHandling(ex -> ex.authenticationEntryPoint(jwtAuthenticationEntryPoint))
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/h2-console/**").permitAll()
-                .requestMatchers("/api/auth/**").permitAll()
-                .requestMatchers("/api/health").permitAll()
-                .requestMatchers("/api/google/callback").permitAll()
-                .anyRequest().authenticated()
-            );
+            .authorizeHttpRequests(auth -> {
+                if (h2ConsoleEnabled) {
+                    auth.requestMatchers("/h2-console/**").permitAll();
+                }
+                auth
+                    .requestMatchers("/api/auth/**").permitAll()
+                    .requestMatchers("/api/health").permitAll()
+                    .requestMatchers("/api/google/callback").permitAll()
+                    .anyRequest().authenticated();
+            });
 
         return http.build();
     }

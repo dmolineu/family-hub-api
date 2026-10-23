@@ -25,4 +25,10 @@ RUN useradd -r -s /bin/false appuser
 COPY --from=build /app/target/app.jar app.jar
 USER appuser
 EXPOSE 8080
-ENTRYPOINT ["java", "-Xmx256m", "-Xms128m", "-jar", "app.jar"]
+# Production is the only profile that makes sense in a container: the default `dev`
+# profile uses an in-memory H2 database and loses everything on restart.
+ENV SPRING_PROFILES_ACTIVE=prod
+# JVM flags are overridable per host (a Pi wants -XX:+UseSerialGC and a bigger heap
+# than a 512 MB VPS). The shell wrapper is what lets JAVA_OPTS expand.
+ENV JAVA_OPTS="-Xmx256m -Xms128m"
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar app.jar"]

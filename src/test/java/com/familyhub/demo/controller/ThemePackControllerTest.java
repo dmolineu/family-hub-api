@@ -1,6 +1,7 @@
 package com.familyhub.demo.controller;
 
 import com.familyhub.demo.config.SecurityConfig;
+import com.familyhub.demo.dto.ThemePackPreview;
 import com.familyhub.demo.dto.ThemePackSummaryResponse;
 import com.familyhub.demo.exception.BadRequestException;
 import com.familyhub.demo.exception.ResourceNotFoundException;
@@ -58,7 +59,8 @@ class ThemePackControllerTest {
     private static final String DOCUMENT = "{\"version\":1,\"name\":\"Padres\",\"dark\":true,\"tokens\":{\"--primary\":\"#ffc425\"},\"images\":{}}";
 
     private static ThemePackSummaryResponse summary() {
-        return new ThemePackSummaryResponse(PACK_ID, "Padres", true, DOCUMENT.length(), Instant.parse("2026-10-23T12:00:00Z"));
+        return new ThemePackSummaryResponse(PACK_ID, "Padres", true, DOCUMENT.length(), Instant.parse("2026-10-23T12:00:00Z"),
+                new ThemePackPreview("#2f241d", null, "#ffc425", null, null, null));
     }
 
     @Test
@@ -71,7 +73,9 @@ class ThemePackControllerTest {
                 .andExpect(jsonPath("$.data[0].id").value(PACK_ID.toString()))
                 .andExpect(jsonPath("$.data[0].name").value("Padres"))
                 .andExpect(jsonPath("$.data[0].dark").value(true))
-                .andExpect(jsonPath("$.data[0].sizeBytes").value(DOCUMENT.length()));
+                .andExpect(jsonPath("$.data[0].sizeBytes").value(DOCUMENT.length()))
+                .andExpect(jsonPath("$.data[0].preview.primary").value("#ffc425"))
+                .andExpect(jsonPath("$.data[0].preview.card").value(org.hamcrest.Matchers.nullValue()));
     }
 
     @Test

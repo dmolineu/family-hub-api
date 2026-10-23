@@ -38,9 +38,9 @@ class ThemePackIntegrationTest {
         return """
                 {"version": 1, "name": "%s", "dark": %s,
                  "tokens": {"--background": "#2f241d", "--primary": "#ffc425"},
-                 "images": {"logo": "%s"},
+                 "images": {"logo": "%s", "background": "%s"},
                  "slots": {"headerLogo": "logo"}}
-                """.formatted(name, dark, PNG_PIXEL).trim();
+                """.formatted(name, dark, PNG_PIXEL, PNG_PIXEL).trim();
     }
 
     @Test
@@ -61,7 +61,11 @@ class ThemePackIntegrationTest {
         mockMvc.perform(get("/api/theme-packs").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data", hasSize(1)))
-                .andExpect(jsonPath("$.data[0].id").value(id));
+                .andExpect(jsonPath("$.data[0].id").value(id))
+                // The listing carries enough to draw the pack's card without the whole file.
+                .andExpect(jsonPath("$.data[0].preview.background").value("#2f241d"))
+                .andExpect(jsonPath("$.data[0].preview.primary").value("#ffc425"))
+                .andExpect(jsonPath("$.data[0].preview.thumbnail").value(org.hamcrest.Matchers.startsWith("data:image/jpeg;base64,")));
 
         // The export is the document exactly as imported.
         mockMvc.perform(get("/api/theme-packs/{id}", id).header("Authorization", "Bearer " + token))

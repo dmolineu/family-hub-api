@@ -1,6 +1,7 @@
 package com.familyhub.demo.service;
 
 import com.familyhub.demo.dto.BackupDocument.ThemePackBackup;
+import com.familyhub.demo.dto.ThemePackPreview;
 import com.familyhub.demo.dto.ThemePackSummaryResponse;
 import com.familyhub.demo.exception.ConflictException;
 import com.familyhub.demo.exception.ResourceNotFoundException;
@@ -11,6 +12,7 @@ import com.familyhub.demo.repository.ThemePackRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.time.ZoneOffset;
@@ -30,14 +32,22 @@ public class ThemePackService {
     private final ThemePackRepository themePackRepository;
     private final FamilyRepository familyRepository;
     private final ThemePackDocumentValidator validator;
+    private final ThemePackPreviewService previewService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     /** A pack ready to be sent back as a download. */
     public record ExportedPack(String name, String document) {}
 
-    @Transactional(readOnly = true)
+    /** Packs imported before previews existed get theirs computed and saved on first listing. */
     public List<ThemePackSummaryResponse> list(Family family) {
         return themePackRepository.findByFamilyIdOrderByCreatedAtAscNameAsc(family.getId()).stream()
-                .map(ThemePackService::summary)
+                .map(pack -> {
+                    if (pack.getPreview() == null) {
+                        pack.setPreview(previewJson(pack.getDocument()));
+                        themePackRepository.save(pack);
+                    }
+                    return summary(pack);
+                })
                 .toList();
     }
 
@@ -107,16 +117,33 @@ public class ThemePackService {
         pack.setName(validated.name());
         pack.setDark(validated.dark());
         pack.setDocument(validated.document());
+        pack.setPreview(previewJson(validated.document()));
         return themePackRepository.save(pack);
     }
 
-    private static ThemePackSummaryResponse summary(ThemePack pack) {
+    private String previewJson(String document) {
+        return objectMapper.writeValueAsString(previewService.preview(document));
+    }
+
+    private ThemePackPreview readPreview(String json) {
+        if (json == null) {
+            return ThemePackPreview.empty();
+        }
+        try {
+            return objectMapper.readValue(json, ThemePackPreview.class);
+        } catch (RuntimeException e) {
+            return ThemePackPreview.empty();
+        }
+    }
+
+    private ThemePackSummaryResponse summary(ThemePack pack) {
         return new ThemePackSummaryResponse(
                 pack.getId(),
                 pack.getName(),
                 pack.isDark(),
                 pack.getDocument().getBytes(StandardCharsets.UTF_8).length,
-                pack.getCreatedAt() == null ? null : pack.getCreatedAt().toInstant(ZoneOffset.UTC)
+                pack.getCreatedAt() == null ? null : pack.getCreatedAt().toInstant(ZoneOffset.UTC),
+                readPreview(pack.getPreview())
         );
     }
 }

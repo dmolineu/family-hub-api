@@ -43,6 +43,10 @@ public class ThemePack {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String document;
 
+    /** Derived card colours + thumbnail as JSON; null until computed. */
+    @Column(columnDefinition = "TEXT")
+    private String preview;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

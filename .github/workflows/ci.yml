@@ -22,16 +22,10 @@ jobs:
           java-version: 21
           cache: maven
 
-      - name: Test release version resolver
-        run: bash scripts/resolve-release-version.test.sh
-
+      # The test profile carries its own JWT and encryption keys, so no repository
+      # secrets are needed (an empty secret would override those defaults with "").
       - name: Build and test
         run: ./mvnw verify
-        env:
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          JWT_EXPIRATION: 86400000
-          JWT_ISSUER: family-hub-api-test
-          TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
 
       - name: Upload test reports
         if: always()
@@ -51,6 +45,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      # arm64 for the Raspberry Pi, amd64 for a server; the Maven output is
+      # architecture-independent so only the base layers differ.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -75,6 +74,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

@@ -15,10 +15,10 @@ public interface ChoreTemplateRepository extends JpaRepository<ChoreTemplate, UU
     @Query("""
             select ct
             from ChoreTemplate ct
-            join fetch ct.assignedToMember m
+            left join fetch ct.assignedToMember m
             where ct.family = :family
               and ct.archivedAt is null
-            order by lower(m.name), ct.createdAt, lower(ct.title)
+            order by ct.createdAt, lower(ct.title)
             """)
     List<ChoreTemplate> findActiveByFamily(@Param("family") Family family);
 

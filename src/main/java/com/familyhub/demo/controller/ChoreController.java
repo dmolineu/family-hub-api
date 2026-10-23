@@ -11,6 +11,8 @@ import com.familyhub.demo.model.Family;
 import com.familyhub.demo.service.ChoreService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import java.util.List;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -23,7 +25,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.net.URI;
 import java.util.UUID;
 
 @RestController
@@ -38,13 +39,15 @@ public class ChoreController {
     }
 
     @PostMapping("/templates")
-    public ResponseEntity<ApiResponse<ChoreTemplateResponse>> createTemplate(
+    public ResponseEntity<ApiResponse<List<ChoreTemplateResponse>>> createTemplates(
             @Valid @RequestBody CreateChoreTemplateRequest request,
             @AuthenticationPrincipal Family family
     ) {
-        ChoreTemplateResponse response = choreService.createTemplate(request, family);
+        // One request can create a chore for several members (or one unassigned chore),
+        // so there is no single Location to point at.
+        List<ChoreTemplateResponse> response = choreService.createTemplates(request, family);
 
-        return ResponseEntity.created(URI.create("/api/chores/templates/" + response.id()))
+        return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new ApiResponse<>(response, "Chore template created successfully"));
     }
 

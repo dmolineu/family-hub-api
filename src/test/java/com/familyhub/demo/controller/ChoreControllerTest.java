@@ -99,23 +99,23 @@ class ChoreControllerTest {
 
     @Test
     @WithMockFamily
-    void createTemplate_returns201WithLocationHeader() throws Exception {
-        given(choreService.createTemplate(any(), any(Family.class)))
-                .willReturn(sampleTemplateResponse(false));
+    void createTemplates_returns201WithTheCreatedTemplates() throws Exception {
+        given(choreService.createTemplates(any(), any(Family.class)))
+                .willReturn(List.of(sampleTemplateResponse(false)));
 
         mockMvc.perform(post("/api/chores/templates")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
                                     "title": "Brush teeth",
-                                    "assignedToMemberId": "00000000-0000-0000-0000-000000000002",
+                                    "assignedToMemberIds": ["00000000-0000-0000-0000-000000000002"],
                                     "cadence": "DAILY",
                                     "activeFrom": "2026-05-17"
                                 }
                                 """))
                 .andExpect(status().isCreated())
-                .andExpect(header().string("Location", "/api/chores/templates/" + CHORE_TEMPLATE_ID))
-                .andExpect(jsonPath("$.data.cadence").value("DAILY"))
+                .andExpect(header().doesNotExist("Location"))
+                .andExpect(jsonPath("$.data[0].cadence").value("DAILY"))
                 .andExpect(jsonPath("$.message").value("Chore template created successfully"));
     }
 
@@ -127,7 +127,7 @@ class ChoreControllerTest {
                         .content("""
                                 {
                                     "title": "Brush teeth",
-                                    "assignedToMemberId": "00000000-0000-0000-0000-000000000002",
+                                    "assignedToMemberIds": ["00000000-0000-0000-0000-000000000002"],
                                     "cadence": "DAILY"
                                 }
                                 """))
@@ -180,6 +180,7 @@ class ChoreControllerTest {
                                 ChoreCadence.DAILY,
                                 MEMBER_ID,
                                 false,
+                                null,
                                 null
                         )
                 ));
@@ -191,6 +192,35 @@ class ChoreControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.item.completed").value(false));
+    }
+
+    @Test
+    @WithMockFamily
+    void completeCurrentPeriod_acceptsWhoCompletedIt() throws Exception {
+        given(choreService.completeCurrentPeriod(eq(CHORE_TEMPLATE_ID), any(), any(Family.class)))
+                .willReturn(new ChoreCurrentPeriodStateResponse(
+                        ChoreScope.TODAY,
+                        LocalDate.of(2026, 5, 17),
+                        LocalDate.of(2026, 5, 17),
+                        new ChoreBoardItemResponse(
+                                CHORE_TEMPLATE_ID,
+                                "Feed the dog",
+                                ChoreCadence.DAILY,
+                                null,
+                                true,
+                                LocalDateTime.of(2026, 5, 17, 16, 0),
+                                MEMBER_ID
+                        )
+                ));
+
+        mockMvc.perform(put("/api/chores/templates/{id}/current-period-completion", CHORE_TEMPLATE_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"scope": "TODAY", "periodStartDate": "2026-05-17",
+                                 "completedByMemberId": "00000000-0000-0000-0000-000000000002"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.item.completedByMemberId").value(MEMBER_ID.toString()));
     }
 
     @Test

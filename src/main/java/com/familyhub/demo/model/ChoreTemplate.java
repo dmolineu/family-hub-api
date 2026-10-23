@@ -32,8 +32,9 @@ public class ChoreTemplate {
     @JoinColumn(name = "family_id", nullable = false)
     private Family family;
 
+    /** Null means the chore is for anyone; whoever completes it gets the credit. */
     @ManyToOne
-    @JoinColumn(name = "assigned_to_member_id", nullable = false)
+    @JoinColumn(name = "assigned_to_member_id")
     private FamilyMember assignedToMember;
 
     @Column(nullable = false, length = 100)

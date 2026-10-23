@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 public record CreateChoreTemplateRequest(
@@ -14,8 +15,9 @@ public record CreateChoreTemplateRequest(
         @Size(max = 100, message = "Chore title must be 100 characters or less")
         String title,
 
-        @NotNull
-        UUID assignedToMemberId,
+        /** Empty or null means "anyone". One template is created per member listed. */
+        @Size(max = 20, message = "A chore can be assigned to at most 20 members at once")
+        List<UUID> assignedToMemberIds,
 
         @NotNull
         ChoreCadence cadence,

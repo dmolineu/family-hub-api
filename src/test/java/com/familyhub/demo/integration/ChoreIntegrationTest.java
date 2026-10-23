@@ -7,6 +7,8 @@ import com.familyhub.demo.model.Family;
 import com.familyhub.demo.repository.ChorePeriodCompletionRepository;
 import com.familyhub.demo.security.WithMockFamily;
 import jakarta.persistence.EntityManager;
+import com.jayway.jsonpath.JsonPath;
+import static org.hamcrest.Matchers.nullValue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,6 +65,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 class ChoreIntegrationTest {
     private static final UUID OTHER_MEMBER_ID = UUID.fromString("00000000-0000-0000-0000-000000000005");
+    private static final UUID SECOND_MEMBER_ID = UUID.fromString("00000000-0000-0000-0000-000000000006");
 
     @Autowired
     private MockMvc mockMvc;
@@ -114,20 +117,20 @@ class ChoreIntegrationTest {
                         .content("""
                                 {
                                   "title": "Brush teeth",
-                                  "assignedToMemberId": "00000000-0000-0000-0000-000000000002",
+                                  "assignedToMemberIds": ["00000000-0000-0000-0000-000000000002"],
                                   "cadence": "DAILY",
                                   "activeFrom": "2026-05-19"
                                 }
                                 """))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.data.title").value("Brush teeth"))
-                .andExpect(jsonPath("$.data.cadence").value("DAILY"))
-                .andExpect(jsonPath("$.data.archived").value(false))
+                .andExpect(jsonPath("$.data[0].title").value("Brush teeth"))
+                .andExpect(jsonPath("$.data[0].cadence").value("DAILY"))
+                .andExpect(jsonPath("$.data[0].archived").value(false))
                 .andReturn()
                 .getResponse()
-                .getHeader("Location");
+                .getContentAsString();
 
-        String templateId = location.substring(location.lastIndexOf('/') + 1);
+        String templateId = JsonPath.read(location, "$.data[0].id");
 
         mockMvc.perform(get("/api/chores/board"))
                 .andExpect(status().isOk())
@@ -179,7 +182,7 @@ class ChoreIntegrationTest {
                         .content("""
                                 {
                                   "title": "Deep clean fridge",
-                                  "assignedToMemberId": "00000000-0000-0000-0000-000000000002",
+                                  "assignedToMemberIds": ["00000000-0000-0000-0000-000000000002"],
                                   "cadence": "MONTHLY",
                                   "activeFrom": "2026-06-01"
                                 }
@@ -199,7 +202,7 @@ class ChoreIntegrationTest {
                         .content("""
                                 {
                                   "title": "Take out trash",
-                                  "assignedToMemberId": "00000000-0000-0000-0000-000000000002",
+                                  "assignedToMemberIds": ["00000000-0000-0000-0000-000000000002"],
                                   "cadence": "WEEKLY",
                                   "activeFrom": "2026-05-21"
                                 }
@@ -211,7 +214,7 @@ class ChoreIntegrationTest {
                         .content("""
                                 {
                                   "title": "Deep clean fridge",
-                                  "assignedToMemberId": "00000000-0000-0000-0000-000000000002",
+                                  "assignedToMemberIds": ["00000000-0000-0000-0000-000000000002"],
                                   "cadence": "MONTHLY",
                                   "activeFrom": "2026-05-25"
                                 }
@@ -268,7 +271,7 @@ class ChoreIntegrationTest {
                         .content("""
                                 {
                                   "title": "Take out trash",
-                                  "assignedToMemberId": "00000000-0000-0000-0000-000000000002",
+                                  "assignedToMemberIds": ["00000000-0000-0000-0000-000000000002"],
                                   "cadence": "WEEKLY",
                                   "activeFrom": "2026-05-21"
                                 }
@@ -276,9 +279,9 @@ class ChoreIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn()
                 .getResponse()
-                .getHeader("Location");
+                .getContentAsString();
 
-        String templateId = location.substring(location.lastIndexOf('/') + 1);
+        String templateId = JsonPath.read(location, "$.data[0].id");
 
         mockMvc.perform(put("/api/chores/templates/{id}/current-period-completion", templateId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -429,7 +432,7 @@ class ChoreIntegrationTest {
                         .content("""
                                 {
                                   "title": "Should be rejected",
-                                  "assignedToMemberId": "00000000-0000-0000-0000-000000000005",
+                                  "assignedToMemberIds": ["00000000-0000-0000-0000-000000000005"],
                                   "cadence": "DAILY",
                                   "activeFrom": "2026-05-19"
                                 }
@@ -457,7 +460,7 @@ class ChoreIntegrationTest {
                         .content("""
                                 {
                                   "title": "Brush teeth",
-                                  "assignedToMemberId": "00000000-0000-0000-0000-000000000002",
+                                  "assignedToMemberIds": ["00000000-0000-0000-0000-000000000002"],
                                   "cadence": "DAILY",
                                   "activeFrom": "2026-05-19"
                                 }
@@ -465,9 +468,91 @@ class ChoreIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn()
                 .getResponse()
-                .getHeader("Location");
+                .getContentAsString();
 
-        return location.substring(location.lastIndexOf('/') + 1);
+        return JsonPath.read(location, "$.data[0].id");
+    }
+
+    @Test
+    @WithMockFamily
+    void unassignedTemplate_showsUnderAnyoneAndCreditsWhoeverCompletesIt() throws Exception {
+        String body = mockMvc.perform(post("/api/chores/templates")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Feed the dog",
+                                  "assignedToMemberIds": [],
+                                  "cadence": "DAILY",
+                                  "activeFrom": "2026-05-19"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data[0].assignedToMemberId").value(nullValue()))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String templateId = JsonPath.read(body, "$.data[0].id");
+
+        mockMvc.perform(get("/api/chores/board"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.today.summary.total").value(1))
+                .andExpect(jsonPath("$.data.today.assignees[0].member").value(nullValue()))
+                .andExpect(jsonPath("$.data.today.assignees[0].chores[0].templateId").value(templateId));
+
+        mockMvc.perform(put("/api/chores/templates/{id}/current-period-completion", templateId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"scope": "TODAY", "periodStartDate": "2026-05-19"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Choose who completed this chore."));
+
+        mockMvc.perform(put("/api/chores/templates/{id}/current-period-completion", templateId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"scope": "TODAY", "periodStartDate": "2026-05-19",
+                                 "completedByMemberId": "00000000-0000-0000-0000-000000000002"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.item.completed").value(true))
+                .andExpect(jsonPath("$.data.item.completedByMemberId").value(MEMBER_ID.toString()));
+
+        mockMvc.perform(get("/api/chores/board"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.today.assignees[0].chores[0].completedByMemberId").value(MEMBER_ID.toString()));
+    }
+
+    @Test
+    @WithMockFamily
+    void createTemplates_forTwoMembers_createsOneTemplateEach() throws Exception {
+        jdbcTemplate.update(
+                "INSERT INTO family_member (id, family_id, name, color, email) VALUES (?, ?, ?, ?, ?)",
+                SECOND_MEMBER_ID, FAMILY_ID, "Second Member", "TEAL", "second@test.com"
+        );
+
+        mockMvc.perform(post("/api/chores/templates")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Set the table",
+                                  "assignedToMemberIds": [
+                                    "00000000-0000-0000-0000-000000000002",
+                                    "00000000-0000-0000-0000-000000000006"
+                                  ],
+                                  "cadence": "DAILY",
+                                  "activeFrom": "2026-05-19"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].assignedToMemberId").value(MEMBER_ID.toString()))
+                .andExpect(jsonPath("$.data[1].assignedToMemberId").value(SECOND_MEMBER_ID.toString()));
+
+        assertThat(choreTemplateCount()).isEqualTo(2);
+        mockMvc.perform(get("/api/chores/board"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.today.summary.total").value(2))
+                .andExpect(jsonPath("$.data.today.assignees.length()").value(2));
     }
 
     private void insertOtherFamilyAndMember() {

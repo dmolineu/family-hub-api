@@ -11,6 +11,7 @@ public record ChoreBoardItemResponse(
         ChoreCadence cadence,
         UUID assignedToMemberId,
         boolean completed,
-        LocalDateTime completedAt
+        LocalDateTime completedAt,
+        UUID completedByMemberId
 ) {
 }

@@ -5,6 +5,7 @@ import com.familyhub.demo.model.ChoreScope;
 import jakarta.validation.constraints.NotNull;
 
 import java.time.LocalDate;
+import java.util.UUID;
 
 public record UpdateCurrentPeriodCompletionRequest(
         @NotNull
@@ -12,6 +13,9 @@ public record UpdateCurrentPeriodCompletionRequest(
 
         @NotNull
         @JsonFormat(pattern = "yyyy-MM-dd")
-        LocalDate periodStartDate
+        LocalDate periodStartDate,
+
+        /** Required for an unassigned chore; defaults to the assignee otherwise. */
+        UUID completedByMemberId
 ) {
 }

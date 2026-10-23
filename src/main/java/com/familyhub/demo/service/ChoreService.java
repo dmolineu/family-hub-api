@@ -35,6 +35,9 @@ import java.time.ZoneId;
 import java.time.temporal.TemporalAdjusters;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
+import java.util.Objects;
+import java.util.ArrayList;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -47,6 +50,7 @@ import java.util.stream.Collectors;
 public class ChoreService {
     private static final String INACTIVE_TEMPLATE_MESSAGE = "Chore template is not active for the current period.";
     private static final String STALE_PERIOD_MESSAGE = "Chore period is stale. Refresh and try again.";
+    private static final String WHO_COMPLETED_REQUIRED_MESSAGE = "Choose who completed this chore.";
 
     private final ChoreTemplateRepository choreTemplateRepository;
     private final ChorePeriodCompletionRepository chorePeriodCompletionRepository;
@@ -87,18 +91,39 @@ public class ChoreService {
         return new ChoreBoardResponse(resolveTimezone(family), todayBoard, weekBoard, monthBoard);
     }
 
+    /**
+     * Creates one template per listed member, or a single unassigned ("anyone") template when
+     * no members are listed. Every member is checked before anything is saved, so a bad id
+     * creates nothing. A member listed twice gets one chore.
+     */
     @Transactional
-    public ChoreTemplateResponse createTemplate(CreateChoreTemplateRequest request, Family family) {
-        FamilyMember assignedToMember = requireAssignedMember(family, request.assignedToMemberId());
+    public List<ChoreTemplateResponse> createTemplates(CreateChoreTemplateRequest request, Family family) {
+        List<UUID> memberIds = request.assignedToMemberIds() == null
+                ? List.of()
+                : request.assignedToMemberIds().stream().filter(Objects::nonNull).distinct().toList();
 
+        List<ChoreTemplate> templates = new ArrayList<>();
+        if (memberIds.isEmpty()) {
+            templates.add(newTemplate(request, family, null));
+        } else {
+            for (UUID memberId : memberIds) {
+                templates.add(newTemplate(request, family, requireAssignedMember(family, memberId)));
+            }
+        }
+
+        return choreTemplateRepository.saveAll(templates).stream()
+                .map(this::toTemplateResponse)
+                .toList();
+    }
+
+    private ChoreTemplate newTemplate(CreateChoreTemplateRequest request, Family family, FamilyMember assignee) {
         ChoreTemplate template = new ChoreTemplate();
         template.setFamily(family);
-        template.setAssignedToMember(assignedToMember);
+        template.setAssignedToMember(assignee);
         template.setTitle(request.title().trim());
         template.setCadence(request.cadence());
         template.setActiveFrom(request.activeFrom());
-
-        return toTemplateResponse(choreTemplateRepository.save(template));
+        return template;
     }
 
     @Transactional
@@ -138,6 +163,7 @@ public class ChoreService {
         ChoreTemplate template = requireActiveTemplate(family, templateId, today);
         ResolvedPeriod period = resolveCurrentPeriod(template, today);
         assertFreshPeriod(request, period);
+        UUID completedByMemberId = resolveCompletedBy(template, request.completedByMemberId(), family);
 
         ChorePeriodCompletion existingCompletion = chorePeriodCompletionRepository
                 .findByChoreTemplateAndPeriodStartDateAndPeriodEndDate(
@@ -156,7 +182,8 @@ public class ChoreService {
                     template.getId(),
                     period.periodStartDate(),
                     period.periodEndDate(),
-                    LocalDateTime.now(clock)
+                    LocalDateTime.now(clock),
+                    completedByMemberId
             );
             return toCurrentPeriodStateResponse(template, period, saved);
         } catch (DataIntegrityViolationException ex) {
@@ -218,6 +245,7 @@ public class ChoreService {
 
         List<FamilyMember> assignees = scopeTemplates.stream()
                 .map(ChoreTemplate::getAssignedToMember)
+                .filter(Objects::nonNull)
                 .collect(Collectors.toMap(
                         FamilyMember::getId,
                         Function.identity(),
@@ -228,9 +256,12 @@ public class ChoreService {
                 .sorted(memberComparator())
                 .toList();
 
-        List<ChoreAssigneeGroupResponse> groups = assignees.stream()
+        // Unassigned chores come first: they are everyone's to pick up.
+        List<ChoreAssigneeGroupResponse> groups = new ArrayList<>();
+        buildAnyoneGroup(scopeTemplates, completionsByTemplateId).ifPresent(groups::add);
+        assignees.stream()
                 .map(member -> buildAssigneeGroup(member, scopeTemplates, completionsByTemplateId))
-                .toList();
+                .forEach(groups::add);
 
         int total = groups.stream().mapToInt(group -> group.summary().total()).sum();
         int completed = groups.stream().mapToInt(group -> group.summary().completed()).sum();
@@ -270,8 +301,32 @@ public class ChoreService {
             List<ChoreTemplate> templates,
             Map<UUID, ChorePeriodCompletion> completionsByTemplateId
     ) {
+        List<ChoreTemplate> own = templates.stream()
+                .filter(template -> template.getAssignedToMember() != null
+                        && template.getAssignedToMember().getId().equals(member.getId()))
+                .toList();
+        return buildGroup(FamilyMemberResponse.toDto(member), own, completionsByTemplateId);
+    }
+
+    private Optional<ChoreAssigneeGroupResponse> buildAnyoneGroup(
+            List<ChoreTemplate> templates,
+            Map<UUID, ChorePeriodCompletion> completionsByTemplateId
+    ) {
+        List<ChoreTemplate> unassigned = templates.stream()
+                .filter(template -> template.getAssignedToMember() == null)
+                .toList();
+        if (unassigned.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(buildGroup(null, unassigned, completionsByTemplateId));
+    }
+
+    private ChoreAssigneeGroupResponse buildGroup(
+            FamilyMemberResponse member,
+            List<ChoreTemplate> templates,
+            Map<UUID, ChorePeriodCompletion> completionsByTemplateId
+    ) {
         List<ChoreBoardItemResponse> chores = templates.stream()
-                .filter(template -> template.getAssignedToMember().getId().equals(member.getId()))
                 .sorted(templateComparator(completionsByTemplateId))
                 .map(template -> toBoardItem(template, completionsByTemplateId.get(template.getId())))
                 .toList();
@@ -280,7 +335,7 @@ public class ChoreService {
         int completed = (int) chores.stream().filter(ChoreBoardItemResponse::completed).count();
 
         return new ChoreAssigneeGroupResponse(
-                FamilyMemberResponse.toDto(member),
+                member,
                 new ChoreAssigneeGroupResponse.Summary(total, completed, total - completed),
                 chores
         );
@@ -320,6 +375,20 @@ public class ChoreService {
         }
 
         return template;
+    }
+
+    /**
+     * The member credited with a completion: whoever the caller names (checked against the
+     * family), else the assignee. An unassigned chore must name someone.
+     */
+    private UUID resolveCompletedBy(ChoreTemplate template, UUID requestedMemberId, Family family) {
+        if (requestedMemberId != null) {
+            return requireAssignedMember(family, requestedMemberId).getId();
+        }
+        if (template.getAssignedToMember() == null) {
+            throw new BadRequestException(WHO_COMPLETED_REQUIRED_MESSAGE);
+        }
+        return template.getAssignedToMember().getId();
     }
 
     private FamilyMember requireAssignedMember(Family family, UUID memberId) {
@@ -379,17 +448,24 @@ public class ChoreService {
                 template.getId(),
                 template.getTitle(),
                 template.getCadence(),
-                template.getAssignedToMember().getId(),
+                assigneeId(template),
                 completion != null,
-                completion != null ? completion.getCompletedAt() : null
+                completion != null ? completion.getCompletedAt() : null,
+                completion != null && completion.getCompletedByMember() != null
+                        ? completion.getCompletedByMember().getId()
+                        : null
         );
+    }
+
+    private static UUID assigneeId(ChoreTemplate template) {
+        return template.getAssignedToMember() == null ? null : template.getAssignedToMember().getId();
     }
 
     private ChoreTemplateResponse toTemplateResponse(ChoreTemplate template) {
         return new ChoreTemplateResponse(
                 template.getId(),
                 template.getTitle(),
-                template.getAssignedToMember().getId(),
+                assigneeId(template),
                 template.getCadence(),
                 template.getActiveFrom(),
                 template.getArchivedAt() != null,

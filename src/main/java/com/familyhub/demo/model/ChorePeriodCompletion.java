@@ -28,6 +28,11 @@ public class ChorePeriodCompletion {
     @JoinColumn(name = "chore_template_id", nullable = false)
     private ChoreTemplate choreTemplate;
 
+    /** Who gets the credit: the assignee, or whoever picked up an unassigned chore. */
+    @ManyToOne
+    @JoinColumn(name = "completed_by_member_id")
+    private FamilyMember completedByMember;
+
     @Column(nullable = false)
     private LocalDate periodStartDate;
 

@@ -31,6 +31,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static com.familyhub.demo.TestDataFactory.CHORE_TEMPLATE_ID;
 import static com.familyhub.demo.TestDataFactory.MEMBER_ID;
@@ -75,7 +76,10 @@ class ChoreServiceTest {
         family = createFamily();
         family.setTimezone("America/Los_Angeles");
         member = createFamilyMember(family);
+        member.setId(MEMBER_ID);
     }
+
+    private static final UUID SECOND_MEMBER_ID = UUID.fromString("00000000-0000-0000-0000-000000000009");
 
     @Test
     void getBoard_groupsTemplatesIntoTodayWeekAndMonth() {
@@ -219,29 +223,60 @@ class ChoreServiceTest {
     }
 
     @Test
-    void createTemplate_savesRecurringTemplate() {
-        CreateChoreTemplateRequest request = new CreateChoreTemplateRequest(
-                " Brush teeth ",
-                MEMBER_ID,
-                ChoreCadence.DAILY,
-                LocalDate.of(2026, 5, 17)
-        );
+    void createTemplates_withSeveralMembers_createsOneTemplatePerMember() {
+        FamilyMember second = createFamilyMember(family);
+        second.setId(SECOND_MEMBER_ID);
         when(familyMemberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(member));
-        when(choreTemplateRepository.save(any(ChoreTemplate.class))).thenAnswer(invocation -> {
-            ChoreTemplate saved = invocation.getArgument(0);
-            saved.setId(CHORE_TEMPLATE_ID);
-            saved.setCreatedAt(LocalDateTime.of(2026, 5, 17, 8, 0));
-            saved.setUpdatedAt(LocalDateTime.of(2026, 5, 17, 8, 0));
+        when(familyMemberRepository.findById(SECOND_MEMBER_ID)).thenReturn(Optional.of(second));
+        when(choreTemplateRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<ChoreTemplate> saved = invocation.getArgument(0);
+            saved.forEach(template -> {
+                template.setId(UUID.randomUUID());
+                template.setCreatedAt(LocalDateTime.of(2026, 5, 17, 8, 0));
+                template.setUpdatedAt(LocalDateTime.of(2026, 5, 17, 8, 0));
+            });
             return saved;
         });
 
-        ChoreTemplateResponse response = choreService.createTemplate(request, family);
+        List<ChoreTemplateResponse> responses = choreService.createTemplates(
+                new CreateChoreTemplateRequest(
+                        " Brush teeth ",
+                        List.of(MEMBER_ID, SECOND_MEMBER_ID, MEMBER_ID),
+                        ChoreCadence.DAILY,
+                        LocalDate.of(2026, 5, 17)
+                ),
+                family
+        );
 
-        assertThat(response.id()).isEqualTo(CHORE_TEMPLATE_ID);
-        assertThat(response.title()).isEqualTo("Brush teeth");
-        assertThat(response.cadence()).isEqualTo(ChoreCadence.DAILY);
-        assertThat(response.activeFrom()).isEqualTo(LocalDate.of(2026, 5, 17));
-        assertThat(response.archived()).isFalse();
+        // A member listed twice still gets one chore.
+        assertThat(responses)
+                .extracting(ChoreTemplateResponse::assignedToMemberId)
+                .containsExactly(MEMBER_ID, SECOND_MEMBER_ID);
+        assertThat(responses).allSatisfy(response -> {
+            assertThat(response.title()).isEqualTo("Brush teeth");
+            assertThat(response.cadence()).isEqualTo(ChoreCadence.DAILY);
+            assertThat(response.activeFrom()).isEqualTo(LocalDate.of(2026, 5, 17));
+            assertThat(response.archived()).isFalse();
+        });
+    }
+
+    @Test
+    void createTemplates_withNoMembers_createsOneUnassignedTemplate() {
+        when(choreTemplateRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<ChoreTemplate> saved = invocation.getArgument(0);
+            saved.forEach(template -> template.setId(CHORE_TEMPLATE_ID));
+            return saved;
+        });
+
+        List<ChoreTemplateResponse> responses = choreService.createTemplates(
+                new CreateChoreTemplateRequest("Feed the dog", List.of(), ChoreCadence.DAILY, LocalDate.of(2026, 5, 17)),
+                family
+        );
+
+        assertThat(responses).hasSize(1);
+        assertThat(responses.get(0).assignedToMemberId()).isNull();
+        assertThat(responses.get(0).title()).isEqualTo("Feed the dog");
+        verifyNoInteractions(familyMemberRepository);
     }
 
     @Test
@@ -298,21 +333,86 @@ class ChoreServiceTest {
         savedCompletion.setPeriodStartDate(LocalDate.of(2026, 5, 17));
         savedCompletion.setPeriodEndDate(LocalDate.of(2026, 5, 17));
         savedCompletion.setCompletedAt(LocalDateTime.of(2026, 5, 17, 16, 0));
+        savedCompletion.setCompletedByMember(member);
         when(chorePeriodCompletionWriter.createCompletion(
                 daily.getId(),
                 LocalDate.of(2026, 5, 17),
                 LocalDate.of(2026, 5, 17),
-                LocalDateTime.of(2026, 5, 17, 16, 0)
+                LocalDateTime.of(2026, 5, 17, 16, 0),
+                MEMBER_ID
         )).thenReturn(savedCompletion);
 
         ChoreCurrentPeriodStateResponse response = choreService.completeCurrentPeriod(
                 daily.getId(),
-                new UpdateCurrentPeriodCompletionRequest(ChoreScope.TODAY, LocalDate.of(2026, 5, 17)),
+                new UpdateCurrentPeriodCompletionRequest(ChoreScope.TODAY, LocalDate.of(2026, 5, 17), null),
                 family
         );
 
         assertThat(response.item().completed()).isTrue();
         assertThat(response.item().completedAt()).isEqualTo(LocalDateTime.of(2026, 5, 17, 16, 0));
+        // An assigned chore credits its assignee without the caller naming anyone.
+        assertThat(response.item().completedByMemberId()).isEqualTo(MEMBER_ID);
+    }
+
+    @Test
+    void completeCurrentPeriod_unassignedTemplate_requiresWhoCompletedIt() {
+        ChoreTemplate anyone = createChoreTemplate(family, null, "Feed the dog", ChoreCadence.DAILY, LocalDate.of(2026, 5, 17));
+        when(choreTemplateRepository.findByFamilyAndId(family, anyone.getId())).thenReturn(Optional.of(anyone));
+
+        assertThatThrownBy(() -> choreService.completeCurrentPeriod(
+                anyone.getId(),
+                new UpdateCurrentPeriodCompletionRequest(ChoreScope.TODAY, LocalDate.of(2026, 5, 17), null),
+                family
+        ))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Choose who completed this chore.");
+        verifyNoInteractions(chorePeriodCompletionWriter);
+    }
+
+    @Test
+    void completeCurrentPeriod_unassignedTemplate_creditsWhoeverCompletedIt() {
+        ChoreTemplate anyone = createChoreTemplate(family, null, "Feed the dog", ChoreCadence.DAILY, LocalDate.of(2026, 5, 17));
+        when(choreTemplateRepository.findByFamilyAndId(family, anyone.getId())).thenReturn(Optional.of(anyone));
+        when(familyMemberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(member));
+        when(chorePeriodCompletionRepository.findByChoreTemplateAndPeriodStartDateAndPeriodEndDate(
+                anyone, LocalDate.of(2026, 5, 17), LocalDate.of(2026, 5, 17)
+        )).thenReturn(Optional.empty());
+        ChorePeriodCompletion saved = new ChorePeriodCompletion();
+        saved.setChoreTemplate(anyone);
+        saved.setPeriodStartDate(LocalDate.of(2026, 5, 17));
+        saved.setPeriodEndDate(LocalDate.of(2026, 5, 17));
+        saved.setCompletedAt(LocalDateTime.of(2026, 5, 17, 16, 0));
+        saved.setCompletedByMember(member);
+        when(chorePeriodCompletionWriter.createCompletion(
+                anyone.getId(), LocalDate.of(2026, 5, 17), LocalDate.of(2026, 5, 17), LocalDateTime.of(2026, 5, 17, 16, 0), MEMBER_ID
+        )).thenReturn(saved);
+
+        ChoreCurrentPeriodStateResponse response = choreService.completeCurrentPeriod(
+                anyone.getId(),
+                new UpdateCurrentPeriodCompletionRequest(ChoreScope.TODAY, LocalDate.of(2026, 5, 17), MEMBER_ID),
+                family
+        );
+
+        assertThat(response.item().assignedToMemberId()).isNull();
+        assertThat(response.item().completedByMemberId()).isEqualTo(MEMBER_ID);
+    }
+
+    @Test
+    void getBoard_listsUnassignedChoresUnderAnyoneFirst() {
+        ChoreTemplate anyone = createChoreTemplate(family, null, "Feed the dog", ChoreCadence.DAILY, LocalDate.of(2026, 5, 17));
+        ChoreTemplate mine = createChoreTemplate(family, member, "Brush teeth", ChoreCadence.DAILY, LocalDate.of(2026, 5, 17));
+        when(choreTemplateRepository.findActiveByFamily(family)).thenReturn(List.of(mine, anyone));
+        when(chorePeriodCompletionRepository.findByTemplateIdsAndPeriod(any(), any(), any())).thenReturn(List.of());
+
+        ChoreBoardResponse board = choreService.getBoard(family);
+
+        assertThat(board.today().assignees()).hasSize(2);
+        assertThat(board.today().assignees().get(0).member()).isNull();
+        assertThat(board.today().assignees().get(0).chores())
+                .extracting(ChoreBoardItemResponse::title)
+                .containsExactly("Feed the dog");
+        assertThat(board.today().assignees().get(1).member().id()).isEqualTo(MEMBER_ID);
+        assertThat(board.today().summary().total()).isEqualTo(2);
     }
 
     @Test
@@ -329,7 +429,7 @@ class ChoreServiceTest {
 
         assertThatThrownBy(() -> choreService.completeCurrentPeriod(
                 archived.getId(),
-                new UpdateCurrentPeriodCompletionRequest(ChoreScope.TODAY, LocalDate.of(2026, 5, 17)),
+                new UpdateCurrentPeriodCompletionRequest(ChoreScope.TODAY, LocalDate.of(2026, 5, 17), null),
                 family
         ))
                 .isInstanceOf(BadRequestException.class)
@@ -350,7 +450,7 @@ class ChoreServiceTest {
 
         assertThatThrownBy(() -> choreService.completeCurrentPeriod(
                 futureWeekly.getId(),
-                new UpdateCurrentPeriodCompletionRequest(ChoreScope.THIS_WEEK, LocalDate.of(2026, 5, 17)),
+                new UpdateCurrentPeriodCompletionRequest(ChoreScope.THIS_WEEK, LocalDate.of(2026, 5, 17), null),
                 family
         ))
                 .isInstanceOf(BadRequestException.class)
@@ -382,13 +482,14 @@ class ChoreServiceTest {
                 daily.getId(),
                 LocalDate.of(2026, 5, 17),
                 LocalDate.of(2026, 5, 17),
-                LocalDateTime.of(2026, 5, 17, 16, 0)
+                LocalDateTime.of(2026, 5, 17, 16, 0),
+                MEMBER_ID
         ))
                 .thenThrow(new DataIntegrityViolationException("duplicate key"));
 
         ChoreCurrentPeriodStateResponse response = choreService.completeCurrentPeriod(
                 daily.getId(),
-                new UpdateCurrentPeriodCompletionRequest(ChoreScope.TODAY, LocalDate.of(2026, 5, 17)),
+                new UpdateCurrentPeriodCompletionRequest(ChoreScope.TODAY, LocalDate.of(2026, 5, 17), null),
                 family
         );
 
@@ -419,7 +520,7 @@ class ChoreServiceTest {
 
         ChoreCurrentPeriodStateResponse response = choreService.uncompleteCurrentPeriod(
                 daily.getId(),
-                new UpdateCurrentPeriodCompletionRequest(ChoreScope.TODAY, LocalDate.of(2026, 5, 17)),
+                new UpdateCurrentPeriodCompletionRequest(ChoreScope.TODAY, LocalDate.of(2026, 5, 17), null),
                 family
         );
 
@@ -440,7 +541,7 @@ class ChoreServiceTest {
 
         assertThatThrownBy(() -> choreService.uncompleteCurrentPeriod(
                 archived.getId(),
-                new UpdateCurrentPeriodCompletionRequest(ChoreScope.TODAY, LocalDate.of(2026, 5, 17)),
+                new UpdateCurrentPeriodCompletionRequest(ChoreScope.TODAY, LocalDate.of(2026, 5, 17), null),
                 family
         ))
                 .isInstanceOf(BadRequestException.class)
@@ -460,7 +561,7 @@ class ChoreServiceTest {
 
         assertThatThrownBy(() -> choreService.uncompleteCurrentPeriod(
                 daily.getId(),
-                new UpdateCurrentPeriodCompletionRequest(ChoreScope.TODAY, LocalDate.of(2026, 5, 16)),
+                new UpdateCurrentPeriodCompletionRequest(ChoreScope.TODAY, LocalDate.of(2026, 5, 16), null),
                 family
         ))
                 .isInstanceOf(BadRequestException.class)

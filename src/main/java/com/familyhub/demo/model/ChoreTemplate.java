@@ -1,6 +1,7 @@
 package com.familyhub.demo.model;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -16,7 +17,10 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDate;
+import java.time.DayOfWeek;
 import java.time.LocalDateTime;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -46,6 +50,20 @@ public class ChoreTemplate {
 
     @Column(nullable = false)
     private LocalDate activeFrom;
+
+    /** For WEEKLY chores: the days it is due; empty means once a week on any day. */
+    @Convert(converter = DayOfWeekSetConverter.class)
+    @Column(name = "days_of_week", length = 70)
+    private Set<DayOfWeek> daysOfWeek = EnumSet.noneOf(DayOfWeek.class);
+
+    public Set<DayOfWeek> getDaysOfWeek() {
+        return daysOfWeek == null ? EnumSet.noneOf(DayOfWeek.class) : daysOfWeek;
+    }
+
+    /** True for a weekly chore pinned to specific days (each day is its own period). */
+    public boolean isDueOnSpecificDays() {
+        return cadence == ChoreCadence.WEEKLY && !getDaysOfWeek().isEmpty();
+    }
 
     private LocalDateTime archivedAt;
 

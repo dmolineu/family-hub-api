@@ -35,6 +35,8 @@ import java.time.ZoneId;
 import java.time.temporal.TemporalAdjusters;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
+import java.util.EnumSet;
 import java.util.Optional;
 import java.util.Objects;
 import java.util.ArrayList;
@@ -51,6 +53,7 @@ public class ChoreService {
     private static final String INACTIVE_TEMPLATE_MESSAGE = "Chore template is not active for the current period.";
     private static final String STALE_PERIOD_MESSAGE = "Chore period is stale. Refresh and try again.";
     private static final String WHO_COMPLETED_REQUIRED_MESSAGE = "Choose who completed this chore.";
+    private static final String DAYS_REQUIRE_WEEKLY_MESSAGE = "Days of the week apply to weekly chores only.";
 
     private final ChoreTemplateRepository choreTemplateRepository;
     private final ChorePeriodCompletionRepository chorePeriodCompletionRepository;
@@ -98,6 +101,7 @@ public class ChoreService {
      */
     @Transactional
     public List<ChoreTemplateResponse> createTemplates(CreateChoreTemplateRequest request, Family family) {
+        requireDaysMatchCadence(request.daysOfWeek(), request.cadence());
         List<UUID> memberIds = request.assignedToMemberIds() == null
                 ? List.of()
                 : request.assignedToMemberIds().stream().filter(Objects::nonNull).distinct().toList();
@@ -122,8 +126,19 @@ public class ChoreService {
         template.setAssignedToMember(assignee);
         template.setTitle(request.title().trim());
         template.setCadence(request.cadence());
+        template.setDaysOfWeek(copyDays(request.daysOfWeek()));
         template.setActiveFrom(request.activeFrom());
         return template;
+    }
+
+    private static Set<DayOfWeek> copyDays(Set<DayOfWeek> days) {
+        return days == null || days.isEmpty() ? EnumSet.noneOf(DayOfWeek.class) : EnumSet.copyOf(days);
+    }
+
+    private static void requireDaysMatchCadence(Set<DayOfWeek> days, ChoreCadence cadence) {
+        if (days != null && !days.isEmpty() && cadence != ChoreCadence.WEEKLY) {
+            throw new BadRequestException(DAYS_REQUIRE_WEEKLY_MESSAGE);
+        }
     }
 
     @Transactional
@@ -143,6 +158,10 @@ public class ChoreService {
         if (request.cadence() != null) {
             template.setCadence(request.cadence());
         }
+        if (request.daysOfWeek() != null) {
+            template.setDaysOfWeek(copyDays(request.daysOfWeek()));
+        }
+        requireDaysMatchCadence(template.getDaysOfWeek(), template.getCadence());
         if (request.activeFrom() != null) {
             template.setActiveFrom(request.activeFrom());
         }
@@ -233,8 +252,9 @@ public class ChoreService {
             LocalDate periodEnd
     ) {
         List<ChoreTemplate> scopeTemplates = activeTemplates.stream()
-                .filter(template -> scopeFor(template.getCadence()) == scope)
+                .filter(template -> scopeFor(template) == scope)
                 .filter(template -> !template.getActiveFrom().isAfter(today))
+                .filter(template -> isDueOn(template, today))
                 .toList();
 
         Map<UUID, ChorePeriodCompletion> completionsByTemplateId = completionsByTemplateId(
@@ -366,11 +386,20 @@ public class ChoreService {
         };
     }
 
+    /** A weekly chore pinned to days behaves like a daily chore on those days. */
+    private ChoreScope scopeFor(ChoreTemplate template) {
+        return template.isDueOnSpecificDays() ? ChoreScope.TODAY : scopeFor(template.getCadence());
+    }
+
+    private static boolean isDueOn(ChoreTemplate template, LocalDate day) {
+        return !template.isDueOnSpecificDays() || template.getDaysOfWeek().contains(day.getDayOfWeek());
+    }
+
     private ChoreTemplate requireActiveTemplate(Family family, UUID templateId, LocalDate today) {
         ChoreTemplate template = choreTemplateRepository.findByFamilyAndId(family, templateId)
                 .orElseThrow(() -> new ResourceNotFoundException("Chore Template", templateId));
 
-        if (template.getArchivedAt() != null || template.getActiveFrom().isAfter(today)) {
+        if (template.getArchivedAt() != null || template.getActiveFrom().isAfter(today) || !isDueOn(template, today)) {
             throw new BadRequestException(INACTIVE_TEMPLATE_MESSAGE);
         }
 
@@ -403,6 +432,9 @@ public class ChoreService {
     }
 
     private ResolvedPeriod resolveCurrentPeriod(ChoreTemplate template, LocalDate today) {
+        if (template.isDueOnSpecificDays()) {
+            return new ResolvedPeriod(ChoreScope.TODAY, today, today);
+        }
         return switch (template.getCadence()) {
             case DAILY -> new ResolvedPeriod(ChoreScope.TODAY, today, today);
             case WEEKLY -> {
@@ -448,6 +480,7 @@ public class ChoreService {
                 template.getId(),
                 template.getTitle(),
                 template.getCadence(),
+                sortedDays(template),
                 assigneeId(template),
                 completion != null,
                 completion != null ? completion.getCompletedAt() : null,
@@ -455,6 +488,10 @@ public class ChoreService {
                         ? completion.getCompletedByMember().getId()
                         : null
         );
+    }
+
+    private static List<DayOfWeek> sortedDays(ChoreTemplate template) {
+        return template.getDaysOfWeek().stream().sorted().toList();
     }
 
     private static UUID assigneeId(ChoreTemplate template) {
@@ -467,6 +504,7 @@ public class ChoreService {
                 template.getTitle(),
                 assigneeId(template),
                 template.getCadence(),
+                sortedDays(template),
                 template.getActiveFrom(),
                 template.getArchivedAt() != null,
                 template.getCreatedAt(),

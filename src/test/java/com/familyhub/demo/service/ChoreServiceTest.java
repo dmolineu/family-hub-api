@@ -25,11 +25,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.Clock;
+import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Set;
+import java.util.EnumSet;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -243,6 +246,7 @@ class ChoreServiceTest {
                         " Brush teeth ",
                         List.of(MEMBER_ID, SECOND_MEMBER_ID, MEMBER_ID),
                         ChoreCadence.DAILY,
+                        null,
                         LocalDate.of(2026, 5, 17)
                 ),
                 family
@@ -269,7 +273,7 @@ class ChoreServiceTest {
         });
 
         List<ChoreTemplateResponse> responses = choreService.createTemplates(
-                new CreateChoreTemplateRequest("Feed the dog", List.of(), ChoreCadence.DAILY, LocalDate.of(2026, 5, 17)),
+                new CreateChoreTemplateRequest("Feed the dog", List.of(), ChoreCadence.DAILY, null, LocalDate.of(2026, 5, 17)),
                 family
         );
 
@@ -300,6 +304,7 @@ class ChoreServiceTest {
                         "Take out trash",
                         MEMBER_ID,
                         ChoreCadence.WEEKLY,
+                        null,
                         LocalDate.of(2026, 5, 18),
                         true
                 ),
@@ -395,6 +400,116 @@ class ChoreServiceTest {
 
         assertThat(response.item().assignedToMemberId()).isNull();
         assertThat(response.item().completedByMemberId()).isEqualTo(MEMBER_ID);
+    }
+
+    @Test
+    void createTemplates_weeklyOnSpecificDays_storesTheDays() {
+        when(familyMemberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(member));
+        when(choreTemplateRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<ChoreTemplate> saved = invocation.getArgument(0);
+            saved.forEach(template -> template.setId(CHORE_TEMPLATE_ID));
+            return saved;
+        });
+
+        List<ChoreTemplateResponse> responses = choreService.createTemplates(
+                new CreateChoreTemplateRequest(
+                        "Take out bins",
+                        List.of(MEMBER_ID),
+                        ChoreCadence.WEEKLY,
+                        Set.of(DayOfWeek.THURSDAY, DayOfWeek.MONDAY),
+                        LocalDate.of(2026, 5, 17)
+                ),
+                family
+        );
+
+        assertThat(responses.get(0).daysOfWeek()).containsExactly(DayOfWeek.MONDAY, DayOfWeek.THURSDAY);
+    }
+
+    @Test
+    void createTemplates_daysOnANonWeeklyChore_isRejected() {
+        assertThatThrownBy(() -> choreService.createTemplates(
+                new CreateChoreTemplateRequest(
+                        "Brush teeth",
+                        List.of(),
+                        ChoreCadence.DAILY,
+                        Set.of(DayOfWeek.MONDAY),
+                        LocalDate.of(2026, 5, 17)
+                ),
+                family
+        ))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Days of the week apply to weekly chores only.");
+        verifyNoInteractions(choreTemplateRepository);
+    }
+
+    @Test
+    void getBoard_weeklyOnSpecificDays_showsUnderTodayOnlyOnThoseDays() {
+        // The fixed clock is Sunday 2026-05-17 in Los Angeles.
+        ChoreTemplate sundays = createChoreTemplate(family, member, "Water plants", ChoreCadence.WEEKLY, LocalDate.of(2026, 5, 10));
+        sundays.setDaysOfWeek(EnumSet.of(DayOfWeek.SUNDAY, DayOfWeek.WEDNESDAY));
+        ChoreTemplate mondays = createChoreTemplate(family, member, "Take out bins", ChoreCadence.WEEKLY, LocalDate.of(2026, 5, 10));
+        mondays.setDaysOfWeek(EnumSet.of(DayOfWeek.MONDAY));
+        ChoreTemplate anyDay = createChoreTemplate(family, member, "Vacuum", ChoreCadence.WEEKLY, LocalDate.of(2026, 5, 10));
+        when(choreTemplateRepository.findActiveByFamily(family)).thenReturn(List.of(sundays, mondays, anyDay));
+        when(chorePeriodCompletionRepository.findByTemplateIdsAndPeriod(any(), any(), any())).thenReturn(List.of());
+
+        ChoreBoardResponse board = choreService.getBoard(family);
+
+        assertThat(board.today().assignees().get(0).chores())
+                .extracting(ChoreBoardItemResponse::title)
+                .containsExactly("Water plants");
+        assertThat(board.today().assignees().get(0).chores().get(0).daysOfWeek())
+                .containsExactly(DayOfWeek.WEDNESDAY, DayOfWeek.SUNDAY);
+        // Day-pinned weekly chores never double up in the week column.
+        assertThat(board.thisWeek().assignees().get(0).chores())
+                .extracting(ChoreBoardItemResponse::title)
+                .containsExactly("Vacuum");
+        assertThat(board.today().summary().total()).isEqualTo(1);
+    }
+
+    @Test
+    void completeCurrentPeriod_weeklyOnSpecificDays_usesTodayAsThePeriod() {
+        ChoreTemplate sundays = createChoreTemplate(family, member, "Water plants", ChoreCadence.WEEKLY, LocalDate.of(2026, 5, 10));
+        sundays.setDaysOfWeek(EnumSet.of(DayOfWeek.SUNDAY));
+        when(choreTemplateRepository.findByFamilyAndId(family, sundays.getId())).thenReturn(Optional.of(sundays));
+        when(chorePeriodCompletionRepository.findByChoreTemplateAndPeriodStartDateAndPeriodEndDate(
+                sundays, LocalDate.of(2026, 5, 17), LocalDate.of(2026, 5, 17)
+        )).thenReturn(Optional.empty());
+        ChorePeriodCompletion saved = new ChorePeriodCompletion();
+        saved.setChoreTemplate(sundays);
+        saved.setPeriodStartDate(LocalDate.of(2026, 5, 17));
+        saved.setPeriodEndDate(LocalDate.of(2026, 5, 17));
+        saved.setCompletedAt(LocalDateTime.of(2026, 5, 17, 16, 0));
+        saved.setCompletedByMember(member);
+        when(chorePeriodCompletionWriter.createCompletion(
+                sundays.getId(), LocalDate.of(2026, 5, 17), LocalDate.of(2026, 5, 17), LocalDateTime.of(2026, 5, 17, 16, 0), MEMBER_ID
+        )).thenReturn(saved);
+
+        ChoreCurrentPeriodStateResponse response = choreService.completeCurrentPeriod(
+                sundays.getId(),
+                new UpdateCurrentPeriodCompletionRequest(ChoreScope.TODAY, LocalDate.of(2026, 5, 17), null),
+                family
+        );
+
+        assertThat(response.scope()).isEqualTo(ChoreScope.TODAY);
+        assertThat(response.periodEndDate()).isEqualTo(LocalDate.of(2026, 5, 17));
+        assertThat(response.item().completed()).isTrue();
+    }
+
+    @Test
+    void completeCurrentPeriod_weeklyOnSpecificDays_notDueToday_isRejected() {
+        ChoreTemplate mondays = createChoreTemplate(family, member, "Take out bins", ChoreCadence.WEEKLY, LocalDate.of(2026, 5, 10));
+        mondays.setDaysOfWeek(EnumSet.of(DayOfWeek.MONDAY));
+        when(choreTemplateRepository.findByFamilyAndId(family, mondays.getId())).thenReturn(Optional.of(mondays));
+
+        assertThatThrownBy(() -> choreService.completeCurrentPeriod(
+                mondays.getId(),
+                new UpdateCurrentPeriodCompletionRequest(ChoreScope.TODAY, LocalDate.of(2026, 5, 17), null),
+                family
+        ))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Chore template is not active for the current period.");
+        verifyNoInteractions(chorePeriodCompletionWriter);
     }
 
     @Test

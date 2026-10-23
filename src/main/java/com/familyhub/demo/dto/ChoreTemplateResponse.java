@@ -4,6 +4,8 @@ import com.familyhub.demo.model.ChoreCadence;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.DayOfWeek;
+import java.util.List;
 import java.util.UUID;
 
 public record ChoreTemplateResponse(
@@ -11,6 +13,7 @@ public record ChoreTemplateResponse(
         String title,
         UUID assignedToMemberId,
         ChoreCadence cadence,
+        List<DayOfWeek> daysOfWeek,
         LocalDate activeFrom,
         boolean archived,
         LocalDateTime createdAt,

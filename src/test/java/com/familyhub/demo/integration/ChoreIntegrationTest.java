@@ -524,6 +524,52 @@ class ChoreIntegrationTest {
 
     @Test
     @WithMockFamily
+    void weeklyOnSpecificDays_roundTripsThroughTheApi() throws Exception {
+        // The fixed clock is Tuesday 2026-05-19 in Los Angeles.
+        String body = mockMvc.perform(post("/api/chores/templates")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Take out bins",
+                                  "assignedToMemberIds": ["00000000-0000-0000-0000-000000000002"],
+                                  "cadence": "WEEKLY",
+                                  "daysOfWeek": ["THURSDAY", "TUESDAY"],
+                                  "activeFrom": "2026-05-19"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data[0].daysOfWeek[0]").value("TUESDAY"))
+                .andExpect(jsonPath("$.data[0].daysOfWeek[1]").value("THURSDAY"))
+                .andReturn().getResponse().getContentAsString();
+        String templateId = JsonPath.read(body, "$.data[0].id");
+
+        mockMvc.perform(get("/api/chores/board"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.today.summary.total").value(1))
+                .andExpect(jsonPath("$.data.today.assignees[0].chores[0].templateId").value(templateId))
+                .andExpect(jsonPath("$.data.today.assignees[0].chores[0].daysOfWeek.length()").value(2))
+                .andExpect(jsonPath("$.data.thisWeek.summary.total").value(0));
+
+        mockMvc.perform(put("/api/chores/templates/{id}/current-period-completion", templateId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"scope": "TODAY", "periodStartDate": "2026-05-19"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.periodEndDate").value("2026-05-19"))
+                .andExpect(jsonPath("$.data.item.completed").value(true));
+
+        mockMvc.perform(patch("/api/chores/templates/{id}", templateId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"daysOfWeek": []}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.daysOfWeek.length()").value(0));
+    }
+
+    @Test
+    @WithMockFamily
     void createTemplates_forTwoMembers_createsOneTemplateEach() throws Exception {
         jdbcTemplate.update(
                 "INSERT INTO family_member (id, family_id, name, color, email) VALUES (?, ?, ?, ?, ?)",

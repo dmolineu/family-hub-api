@@ -7,6 +7,8 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
+import java.time.DayOfWeek;
+import java.util.Set;
 import java.util.List;
 import java.util.UUID;
 
@@ -21,6 +23,9 @@ public record CreateChoreTemplateRequest(
 
         @NotNull
         ChoreCadence cadence,
+
+        /** WEEKLY only: the days the chore is due; empty or null means once a week. */
+        Set<DayOfWeek> daysOfWeek,
 
         @NotNull
         @JsonFormat(pattern = "yyyy-MM-dd")

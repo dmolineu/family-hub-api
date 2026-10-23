@@ -9,6 +9,7 @@ public record FamilyResponse(
         String name,
         String timezone,
         List<FamilyMemberResponse> members,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        String weatherLocation
 ) {
 }

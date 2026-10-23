@@ -15,7 +15,8 @@ public class FamilyMapper {
                 family.getFamilyMembers().stream()
                         .map(FamilyMemberMapper::toDto)
                         .toList(),
-                family.getCreatedAt()
+                family.getCreatedAt(),
+                family.getWeatherLocation()
         );
     }
 }

@@ -11,5 +11,9 @@ public record FamilyRequest(
         @Pattern(regexp = "^[a-z0-9_]+$", message = "Username can only contain lowercase letters, numbers, and underscores")
         String username,
 
-        String timezone
+        String timezone,
+
+        /** A city, "city, state" or postal code; blank clears it; null leaves it unchanged. */
+        @Size(max = 120, message = "Weather location must be 120 characters or less")
+        String weatherLocation
 ) {}

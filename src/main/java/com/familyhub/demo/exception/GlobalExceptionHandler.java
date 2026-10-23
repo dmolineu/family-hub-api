@@ -70,6 +70,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return buildErrorResponse(HttpStatus.FORBIDDEN, request, ex.getMessage());
     }
 
+    @ExceptionHandler(ServiceUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleServiceUnavailable(ServiceUnavailableException ex, HttpServletRequest request) {
+        log.warn("Upstream unavailable: {} {}, message={}", request.getMethod(), request.getRequestURI(), ex.getMessage(), ex);
+        return buildErrorResponse(HttpStatus.SERVICE_UNAVAILABLE, request, ex.getMessage());
+    }
+
     @ExceptionHandler(BadRequestException.class)
     public ResponseEntity<ErrorResponse> handleBadRequest(BadRequestException ex, HttpServletRequest request) {
         log.warn("Bad request: {} {}, message={}", request.getMethod(), request.getRequestURI(), ex.getMessage());

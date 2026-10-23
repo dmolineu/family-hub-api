@@ -6,10 +6,15 @@ import com.familyhub.demo.exception.ResourceNotFoundException;
 import com.familyhub.demo.mapper.FamilyMapper;
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.repository.FamilyRepository;
+import com.familyhub.demo.exception.BadRequestException;
+import com.familyhub.demo.exception.ServiceUnavailableException;
+import com.familyhub.demo.weather.GeoLocation;
+import com.familyhub.demo.weather.WeatherProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -17,6 +22,7 @@ import java.util.UUID;
 @Transactional(readOnly = true)
 public class FamilyService {
     private final FamilyRepository familyRepository;
+    private final WeatherProvider weatherProvider;
 
     @Transactional
     public FamilyResponse findFamilyResponse(UUID familyId) {
@@ -46,7 +52,33 @@ public class FamilyService {
             toBeUpdated.setTimezone(FamilyTimezoneResolver.normalizeRequestedTimezone(family.timezone()));
         }
 
+        if (family.weatherLocation() != null) {
+            applyWeatherLocation(toBeUpdated, family.weatherLocation());
+        }
+
         return FamilyMapper.toDto(familyRepository.save(toBeUpdated));
+    }
+
+    /** Blank clears the location; anything else must geocode to a real place. */
+    private void applyWeatherLocation(Family family, String requested) {
+        String query = requested.trim();
+        if (query.isEmpty()) {
+            family.setWeatherLocation(null);
+            family.setLatitude(null);
+            family.setLongitude(null);
+            return;
+        }
+        Optional<GeoLocation> place;
+        try {
+            place = weatherProvider.geocode(query);
+        } catch (RuntimeException ex) {
+            throw new ServiceUnavailableException("Could not look up that location right now; try again later.", ex);
+        }
+        GeoLocation location = place.orElseThrow(() -> new BadRequestException(
+                "Could not find that location. Try a city and state, or a postal code."));
+        family.setWeatherLocation(location.displayName());
+        family.setLatitude(location.latitude());
+        family.setLongitude(location.longitude());
     }
 
     @Transactional

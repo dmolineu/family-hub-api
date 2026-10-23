@@ -184,7 +184,7 @@ public final class TestDataFactory {
     }
 
     public static FamilyRequest createFamilyRequest() {
-        return new FamilyRequest("Updated Family", "testfamily", null);
+        return new FamilyRequest("Updated Family", "testfamily", null, null);
     }
 
     public static FamilyResponse createFamilyResponse(Family family) {
@@ -203,7 +203,8 @@ public final class TestDataFactory {
                         ))
                         .toList()
                         : List.of(),
-                family.getCreatedAt()
+                family.getCreatedAt(),
+                family.getWeatherLocation()
         );
     }
 

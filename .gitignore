@@ -43,3 +43,14 @@ application-local.properties
 
 reviews/
 docs/
+
+# Theme packs carry third-party artwork and are never committed (see CLAUDE.md, Secrets)
+*.familytheme.json
+theme-packs/out/
+
+# Key material
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks

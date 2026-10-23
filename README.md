@@ -143,3 +143,14 @@ com.familyhub.demo
 ## License
 
 [AGPL-3.0](LICENSE) — Copyright © 2026 Joezari Borlongan. Open source; any fork or hosted derivative (including a modified API served over a network) must also publish its source.
+
+## Git hooks (required for contributors)
+
+This fork mirrors to a public repository. Enable the fail-closed secret-scanning hooks once per clone:
+
+```bash
+brew install gitleaks
+git config core.hooksPath scripts/git-hooks
+```
+
+The rules they enforce are in `CLAUDE.md` under "Secrets: hard rules".

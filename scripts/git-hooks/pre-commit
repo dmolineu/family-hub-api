@@ -1,0 +1,9 @@
+#!/bin/sh
+# Secret scan of the staged changes (this repo mirrors to a public GitHub repo).
+# Fails closed: a missing scanner is not a pass. Enabled per clone with
+#   git config core.hooksPath scripts/git-hooks
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks is required (brew install gitleaks); refusing to commit unscanned changes" >&2
+  exit 1
+fi
+exec gitleaks git --pre-commit --staged --no-banner --redact=100

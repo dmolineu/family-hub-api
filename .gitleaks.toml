@@ -1,0 +1,18 @@
+# gitleaks configuration. Extends the built-in rules; the allowlist below names the
+# ONLY values that may look like secrets in this repository. Each one is a test
+# fixture derived from an obvious phrase. Add to it only with a comment that says
+# why the value is harmless; never allowlist a whole path or rule.
+title = "family-hub-api secret scanning"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Upstream test fixtures that are not secrets"
+regexes = [
+  # base64("test-secret-key-that-is-long-enough-for-hmac-sha-256"): JWT test secret
+  # in application-test.yml, JwtServiceTest and the CI e2e environment
+  '''dGVzdC1zZWNyZXQta2V5LXRoYXQtaXMtbG9uZy1lbm91Z2gtZm9yLWhtYWMtc2hhLTI1Ng==''',
+  # upstream's throwaway AES-256 test key in application-test.yml / TokenEncryptionServiceTest
+  '''hZVYYDBsu6sIox9GnjtoSB6Wv3cgjVG5euDC/JVAHZ4=''',
+]

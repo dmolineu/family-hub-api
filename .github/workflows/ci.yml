@@ -8,6 +8,25 @@ on:
     branches: [main]
 
 jobs:
+  # The repository mirrors to public GitHub: every push re-scans the whole history,
+  # and the image jobs below refuse to publish until this passes.
+  secrets:
+    name: No secrets in history
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # The release binary rather than the container image: git inside a container
+      # refuses a checkout owned by another user ("dubious ownership").
+      - name: Install gitleaks
+        run: |
+          mkdir -p "$HOME/bin"
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz | tar -xz -C "$HOME/bin" gitleaks
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+      - name: gitleaks over the full history
+        run: gitleaks git --no-banner --redact=100 .
+
   build-and-test:
     runs-on: ubuntu-latest
     permissions:
@@ -37,7 +56,7 @@ jobs:
           retention-days: 7
 
   publish-docker:
-    needs: build-and-test
+    needs: [build-and-test, secrets]
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -71,6 +90,19 @@ jobs:
             type=raw,value=latest
             type=sha,prefix=
 
+      # Build the amd64 variant locally first and inspect it: no secret files, no
+      # secret environment, no secret strings. Only then build for both platforms
+      # and push (the cache makes the second build cheap).
+      - name: Build amd64 image for inspection
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: inspect:ci
+          cache-from: type=gha
+      - name: Check the image carries no secrets
+        run: scripts/check-image.sh inspect:ci /app
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:

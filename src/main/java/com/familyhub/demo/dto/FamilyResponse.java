@@ -10,6 +10,9 @@ public record FamilyResponse(
         String timezone,
         List<FamilyMemberResponse> members,
         LocalDateTime createdAt,
-        String weatherLocation
+        String weatherLocation,
+        /** Resolved from the weather location; null until one is set. Devices use them for local sunrise/sunset. */
+        Double latitude,
+        Double longitude
 ) {
 }

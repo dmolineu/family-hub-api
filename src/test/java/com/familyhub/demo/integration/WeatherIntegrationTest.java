@@ -64,6 +64,12 @@ class WeatherIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.weatherLocation").value("San Diego, California"));
 
+        // The resolved coordinates are exposed so devices can work out local sunrise and sunset.
+        mockMvc.perform(get("/api/family").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.latitude").value(32.7157))
+                .andExpect(jsonPath("$.data.longitude").value(-117.1647));
+
         mockMvc.perform(get("/api/weather").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.location").value("San Diego, California"))

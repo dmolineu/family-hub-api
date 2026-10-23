@@ -204,7 +204,9 @@ public final class TestDataFactory {
                         .toList()
                         : List.of(),
                 family.getCreatedAt(),
-                family.getWeatherLocation()
+                family.getWeatherLocation(),
+                null,
+                null
         );
     }
 

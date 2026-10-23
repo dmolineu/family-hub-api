@@ -50,7 +50,9 @@ class AuthControllerTest {
 
     private AuthResponse sampleAuthResponse() {
         return new AuthResponse("jwt-token", new FamilyResponse(
-                FAMILY_ID, "Test Family", "America/Los_Angeles", List.of(), LocalDateTime.of(2025, 1, 1, 0, 0), null
+                FAMILY_ID, "Test Family", "America/Los_Angeles", List.of(), LocalDateTime.of(2025, 1, 1, 0, 0), null,
+                null,
+                null
         ));
     }
 

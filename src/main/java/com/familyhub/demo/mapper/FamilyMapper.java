@@ -16,7 +16,9 @@ public class FamilyMapper {
                         .map(FamilyMemberMapper::toDto)
                         .toList(),
                 family.getCreatedAt(),
-                family.getWeatherLocation()
+                family.getWeatherLocation(),
+                family.getLatitude(),
+                family.getLongitude()
         );
     }
 }

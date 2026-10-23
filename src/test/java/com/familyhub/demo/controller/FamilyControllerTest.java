@@ -54,6 +54,8 @@ class FamilyControllerTest {
                         "Mom", FamilyColor.CORAL, "mom@test.com", null
                 )),
                 LocalDateTime.of(2025, 1, 1, 0, 0),
+                null,
+                null,
                 null
         );
     }

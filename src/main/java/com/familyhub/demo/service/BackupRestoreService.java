@@ -79,6 +79,7 @@ public class BackupRestoreService {
     private final RecipeRepository recipeRepository;
     private final MealSlotRepository mealSlotRepository;
     private final CalendarEventRepository calendarEventRepository;
+    private final ThemePackService themePackService;
     private final EntityManager entityManager;
 
     @Transactional
@@ -108,6 +109,7 @@ public class BackupRestoreService {
         restoreMeals(document.meals(), family, recipes);
         restoreChores(document.chores(), family, members);
         restoreEvents(document.events(), family, members);
+        int themePacks = themePackService.replaceAll(document.themePacks(), family);
 
         return new RestoreSummary(
                 document.members().size(),
@@ -115,7 +117,8 @@ public class BackupRestoreService {
                 document.lists().lists().size(),
                 document.recipes().size(),
                 document.meals().size(),
-                document.events().size()
+                document.events().size(),
+                themePacks
         );
     }
 

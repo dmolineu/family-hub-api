@@ -33,9 +33,18 @@ public record BackupDocument(
         @NotNull @Valid ListsBackup lists,
         @NotNull @Valid List<RecipeBackup> recipes,
         @NotNull @Valid List<MealSlotBackup> meals,
-        @NotNull @Valid List<EventBackup> events
+        @NotNull @Valid List<EventBackup> events,
+        /** Absent in backups taken before theme packs existed; treated as empty. */
+        @Valid List<ThemePackBackup> themePacks
 ) {
     public static final int CURRENT_VERSION = 1;
+
+    /** A look the family imported, as the exact document; validated again on restore. */
+    public record ThemePackBackup(
+            @NotBlank String name,
+            boolean dark,
+            @NotBlank String document
+    ) {}
 
     public record FamilyBackup(
             @NotBlank String name,

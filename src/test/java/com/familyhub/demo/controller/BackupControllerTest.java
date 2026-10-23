@@ -62,6 +62,7 @@ class BackupControllerTest {
                 new BackupDocument.ListsBackup(true, List.of(), List.of()),
                 List.of(),
                 List.of(),
+                List.of(),
                 List.of()
         );
     }
@@ -82,7 +83,7 @@ class BackupControllerTest {
     @WithMockFamily
     void restore_returnsTheSummary() throws Exception {
         given(backupRestoreService.restore(any(BackupDocument.class), any(Family.class)))
-                .willReturn(new RestoreSummary(2, 3, 1, 26, 1, 3));
+                .willReturn(new RestoreSummary(2, 3, 1, 26, 1, 3, 2));
 
         mockMvc.perform(post("/api/backup/restore")
                         .contentType(MediaType.APPLICATION_JSON)

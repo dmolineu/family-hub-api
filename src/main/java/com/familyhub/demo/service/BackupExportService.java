@@ -64,6 +64,7 @@ public class BackupExportService {
     private final RecipeRepository recipeRepository;
     private final MealSlotRepository mealSlotRepository;
     private final CalendarEventRepository calendarEventRepository;
+    private final ThemePackService themePackService;
     private final Clock clock;
 
     public BackupDocument export(Family principal) {
@@ -86,7 +87,8 @@ public class BackupExportService {
                 lists(family),
                 recipes(family),
                 meals(family),
-                events(family)
+                events(family),
+                themePackService.exportAll(family)
         );
     }
 

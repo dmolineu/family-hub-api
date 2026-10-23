@@ -1,5 +1,20 @@
 # FamilyHub API
 
+> **This is a fork** of [joe-bor/family-hub-api](https://github.com/joe-bor/family-hub-api)
+> for a self-hosted family wall calendar (plan: `family-dashboard/` in the syno-media repo).
+> Differences from upstream so far:
+> - Testcontainers is the Spring Boot-managed 2.0.x (`testcontainers-postgresql`), which
+>   is what makes the test suite run on Docker Engine 29 and Colima.
+> - The image defaults to the `prod` profile and honours `JAVA_OPTS`.
+> - `/h2-console` and relaxed frame options exist only when `security.h2-console.enabled`
+>   is true (the dev profile); prod sends `X-Frame-Options: DENY`.
+> - CI builds a multi-arch image (amd64 + arm64) and needs no repository secrets; the
+>   release-please and add-to-project workflows are gone because this repo is push-mirrored
+>   from Gitea to GitHub.
+>
+> Run it with the Compose stack in `syno-media/docker/project/family-dashboard/`.
+
+
 [![CI](https://github.com/joe-bor/family-hub-api/actions/workflows/ci.yml/badge.svg)](https://github.com/joe-bor/family-hub-api/actions/workflows/ci.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 ![Java 21](https://img.shields.io/badge/Java-21-orange)

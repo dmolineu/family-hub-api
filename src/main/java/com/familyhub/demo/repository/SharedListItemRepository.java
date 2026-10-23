@@ -45,4 +45,8 @@ public interface SharedListItemRepository extends JpaRepository<SharedListItem, 
               and item.category.id = :categoryId
             """)
     int clearCategory(@Param("familyId") UUID familyId, @Param("kind") ListKind kind, @Param("categoryId") UUID categoryId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from SharedListItem i where i.familyId = :familyId")
+    void deleteByFamilyId(@Param("familyId") UUID familyId);
 }

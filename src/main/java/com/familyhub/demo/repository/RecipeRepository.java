@@ -21,4 +21,6 @@ public interface RecipeRepository extends JpaRepository<Recipe, UUID> {
     List<Recipe> findByFamilyForSummary(@Param("family") Family family);
 
     Optional<Recipe> findByIdAndFamily(UUID id, Family family);
+
+    List<Recipe> findByFamilyOrderByCreatedAtAsc(Family family);
 }

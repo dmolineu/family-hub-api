@@ -55,4 +55,8 @@ public interface SharedListRepository extends JpaRepository<SharedList, UUID> {
               and list.categoryDisplayMode = com.familyhub.demo.model.ListCategoryDisplayMode.GROUPED
             """)
     int flattenGroupedLists(@Param("family") Family family, @Param("kind") ListKind kind);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from SharedList l where l.family = :family")
+    void deleteByFamily(@Param("family") Family family);
 }

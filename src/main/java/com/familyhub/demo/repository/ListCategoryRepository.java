@@ -1,5 +1,6 @@
 package com.familyhub.demo.repository;
 
+import org.springframework.data.jpa.repository.Modifying;
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.model.ListCategory;
 import com.familyhub.demo.model.ListKind;
@@ -29,4 +30,10 @@ public interface ListCategoryRepository extends JpaRepository<ListCategory, UUID
                                    @Param("name") String name, @Param("excludeId") UUID excludeId);
 
     long countByFamilyAndKind(Family family, ListKind kind);
+
+    List<ListCategory> findByFamilyOrderByKindAscSortOrderAsc(Family family);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from ListCategory c where c.family = :family")
+    void deleteByFamily(@Param("family") Family family);
 }

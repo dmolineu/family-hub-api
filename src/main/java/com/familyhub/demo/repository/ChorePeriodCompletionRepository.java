@@ -1,5 +1,7 @@
 package com.familyhub.demo.repository;
 
+import com.familyhub.demo.model.Family;
+import org.springframework.data.jpa.repository.Modifying;
 import com.familyhub.demo.model.ChorePeriodCompletion;
 import com.familyhub.demo.model.ChoreTemplate;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -30,4 +32,11 @@ public interface ChorePeriodCompletionRepository extends JpaRepository<ChorePeri
             LocalDate periodStartDate,
             LocalDate periodEndDate
     );
+
+    @Query("select c from ChorePeriodCompletion c join fetch c.choreTemplate t where t.family = :family")
+    List<ChorePeriodCompletion> findByFamily(@Param("family") Family family);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from ChorePeriodCompletion c where c.choreTemplate in (select t from ChoreTemplate t where t.family = :family)")
+    void deleteByFamily(@Param("family") Family family);
 }

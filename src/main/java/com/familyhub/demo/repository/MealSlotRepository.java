@@ -23,4 +23,6 @@ public interface MealSlotRepository extends JpaRepository<MealSlot, UUID> {
             int dayIndex,
             MealType mealType
     );
+
+    List<MealSlot> findByFamilyOrderByWeekStartDateAscDayIndexAscMealTypeAsc(Family family);
 }

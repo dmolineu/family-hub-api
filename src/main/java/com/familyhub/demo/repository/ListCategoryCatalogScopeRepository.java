@@ -1,5 +1,7 @@
 package com.familyhub.demo.repository;
 
+import java.util.List;
+import org.springframework.data.jpa.repository.Modifying;
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.model.ListCategoryCatalogScope;
 import com.familyhub.demo.model.ListKind;
@@ -32,4 +34,10 @@ public interface ListCategoryCatalogScopeRepository extends JpaRepository<ListCa
               and scope.kind = category.kind
             """)
     Optional<ListCategoryCatalogScope> lockByFamilyAndCategoryId(@Param("family") Family family, @Param("categoryId") UUID categoryId);
+
+    List<ListCategoryCatalogScope> findByFamily(Family family);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from ListCategoryCatalogScope s where s.family = :family")
+    void deleteByFamily(@Param("family") Family family);
 }

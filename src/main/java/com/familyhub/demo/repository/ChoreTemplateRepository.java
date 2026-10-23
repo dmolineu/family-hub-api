@@ -1,5 +1,6 @@
 package com.familyhub.demo.repository;
 
+import org.springframework.data.jpa.repository.Modifying;
 import com.familyhub.demo.model.ChoreTemplate;
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.model.FamilyMember;
@@ -25,4 +26,11 @@ public interface ChoreTemplateRepository extends JpaRepository<ChoreTemplate, UU
     Optional<ChoreTemplate> findByFamilyAndId(Family family, UUID id);
 
     boolean existsByAssignedToMemberAndArchivedAtIsNull(FamilyMember member);
+
+    /** Every template, archived ones included, for backup. */
+    List<ChoreTemplate> findByFamilyOrderByCreatedAtAsc(Family family);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from ChoreTemplate t where t.family = :family")
+    void deleteByFamily(@Param("family") Family family);
 }

@@ -1,5 +1,6 @@
 package com.familyhub.demo.repository;
 
+import org.springframework.data.jpa.repository.Modifying;
 import com.familyhub.demo.model.CalendarEvent;
 import com.familyhub.demo.model.Family;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -43,4 +44,9 @@ public interface CalendarEventRepository extends JpaRepository<CalendarEvent, UU
 
     Optional<CalendarEvent> findByGoogleEventId(String googleEventId);
     void deleteByGoogleEventId(String googleEventId);
+
+    /** Native events only: Google-synced rows are left for the sync to manage. */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from CalendarEvent e where e.family = :family and e.source = com.familyhub.demo.model.EventSource.NATIVE")
+    void deleteNativeByFamily(@Param("family") Family family);
 }

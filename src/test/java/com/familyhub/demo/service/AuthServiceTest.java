@@ -26,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -69,6 +70,21 @@ class AuthServiceTest {
         authService.register(request);
 
         verify(recipeSeedService).seedStarterRecipes(family);
+    }
+
+    @Test
+    void register_starterRecipesFalse_skipsSeeding() {
+        RegisterRequest base = createRegisterRequest();
+        RegisterRequest request = new RegisterRequest(
+                base.username(), base.password(), base.familyName(), base.members(), base.timezone(), Boolean.FALSE);
+        when(familyRepository.existsByUsername(request.username())).thenReturn(false);
+        when(passwordEncoder.encode(anyString())).thenReturn("hash");
+        when(familyRepository.saveAndFlush(any(Family.class))).thenReturn(family);
+        when(jwtService.generateToken(family)).thenReturn("token");
+
+        authService.register(request);
+
+        verify(recipeSeedService, never()).seedStarterRecipes(any());
     }
 
     @Test

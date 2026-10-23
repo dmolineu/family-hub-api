@@ -46,7 +46,9 @@ public class AuthService {
         );
         Family saved = familyRepository.saveAndFlush(family);
         listSeedService.seedDefaultsForFamily(saved);
-        recipeSeedService.seedStarterRecipes(saved);
+        if (registerRequest.wantsStarterRecipes()) {
+            recipeSeedService.seedStarterRecipes(saved);
+        }
         log.info("Family registered, familyId={}, username={}", saved.getId(), saved.getUsername());
 
         // Create JWT and return response

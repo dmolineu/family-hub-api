@@ -26,5 +26,24 @@ public record RegisterRequest(
     List<@Valid FamilyMemberRequest> members,
 
     @Size(max = 100, message = "Timezone must be 100 characters or less")
-    String timezone
-){}
+    String timezone,
+
+    /**
+     * Whether to seed the starter recipe pack into the new family's library.
+     * Omitted or {@code true} seeds it (the normal sign-up); {@code false} starts
+     * with an empty library, which automated tests and families bringing their
+     * own recipes prefer. The pack can always be added later from the library.
+     */
+    Boolean starterRecipes
+){
+    /** The pre-opt-out shape: seeds the starter recipes. */
+    public RegisterRequest(String username, String password, String familyName,
+                           List<FamilyMemberRequest> members, String timezone) {
+        this(username, password, familyName, members, timezone, null);
+    }
+
+    /** {@code true} unless the request explicitly opted out. */
+    public boolean wantsStarterRecipes() {
+        return !Boolean.FALSE.equals(starterRecipes);
+    }
+}

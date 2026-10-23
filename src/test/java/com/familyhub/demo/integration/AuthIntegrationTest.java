@@ -79,6 +79,44 @@ class AuthIntegrationTest {
     }
 
     @Test
+    void register_starterRecipesOptOut_leavesTheLibraryEmpty() throws Exception {
+        String username = uniqueUsername();
+        String body = mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                    "username": "%s",
+                                    "password": "password123",
+                                    "familyName": "Empty Library Family",
+                                    "members": [{ "name": "Mom", "color": "coral" }],
+                                    "starterRecipes": false
+                                }
+                                """.formatted(username)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String token = JsonPath.read(body, "$.data.token");
+
+        mockMvc.perform(get("/api/recipes").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    @Test
+    void register_byDefault_seedsTheStarterRecipes() throws Exception {
+        String username = uniqueUsername();
+        String body = mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(registerJson(username)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String token = JsonPath.read(body, "$.data.token");
+
+        mockMvc.perform(get("/api/recipes").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(26));
+    }
+
+    @Test
     void register_invalidData_returns400() throws Exception {
         String payload = """
                 {

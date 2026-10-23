@@ -1,6 +1,7 @@
 package com.familyhub.demo.integration;
 
 import com.familyhub.demo.config.TestcontainersConfig;
+import com.familyhub.demo.service.StarterRecipeBundle;
 import com.familyhub.demo.service.ImportedRecipe;
 import com.familyhub.demo.service.RecipeImportService;
 import com.jayway.jsonpath.JsonPath;
@@ -176,6 +177,21 @@ class RecipeIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].id").value(importedRecipeId))
                 .andExpect(jsonPath("$.data[0].tags[0]").value("dinner"));
+    }
+
+    @Test
+    void registration_seedsStarterRecipes_andTheStarterPackIsIdempotent() throws Exception {
+        String token = registerAndToken(uniqueUsername(), "Starter Family");
+
+        mockMvc.perform(get("/api/recipes").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(StarterRecipeBundle.load().size()))
+                .andExpect(jsonPath("$.data[?(@.tags[?(@ == 'grill')])]").isNotEmpty());
+
+        mockMvc.perform(post("/api/recipes/starter-pack").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.added").value(0))
+                .andExpect(jsonPath("$.data.skipped").value(StarterRecipeBundle.load().size()));
     }
 
     private String registerAndToken(String username, String familyName) throws Exception {

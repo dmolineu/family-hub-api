@@ -44,6 +44,9 @@ class AuthServiceTest {
     @Mock
     private ListSeedService listSeedService;
 
+    @Mock
+    private RecipeSeedService recipeSeedService;
+
     @InjectMocks
     private AuthService authService;
 
@@ -53,6 +56,19 @@ class AuthServiceTest {
     void setUp() {
         family = createFamily();
         family.setFamilyMembers(List.of());
+    }
+
+    @Test
+    void register_success_seedsStarterRecipes() {
+        RegisterRequest request = createRegisterRequest();
+        when(familyRepository.existsByUsername(request.username())).thenReturn(false);
+        when(passwordEncoder.encode(anyString())).thenReturn("hash");
+        when(familyRepository.saveAndFlush(any(Family.class))).thenReturn(family);
+        when(jwtService.generateToken(family)).thenReturn("token");
+
+        authService.register(request);
+
+        verify(recipeSeedService).seedStarterRecipes(family);
     }
 
     @Test

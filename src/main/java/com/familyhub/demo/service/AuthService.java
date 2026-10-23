@@ -24,6 +24,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final ListSeedService listSeedService;
+    private final RecipeSeedService recipeSeedService;
 
     @Transactional
     public AuthResponse register(RegisterRequest registerRequest) {
@@ -45,6 +46,7 @@ public class AuthService {
         );
         Family saved = familyRepository.saveAndFlush(family);
         listSeedService.seedDefaultsForFamily(saved);
+        recipeSeedService.seedStarterRecipes(saved);
         log.info("Family registered, familyId={}, username={}", saved.getId(), saved.getUsername());
 
         // Create JWT and return response

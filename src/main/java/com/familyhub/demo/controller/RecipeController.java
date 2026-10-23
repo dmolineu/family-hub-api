@@ -7,6 +7,8 @@ import com.familyhub.demo.dto.RecipeDetailResponse;
 import com.familyhub.demo.dto.RecipeSummaryResponse;
 import com.familyhub.demo.dto.UpdateRecipeRequest;
 import com.familyhub.demo.model.Family;
+import com.familyhub.demo.dto.StarterRecipesResponse;
+import com.familyhub.demo.service.RecipeSeedService;
 import com.familyhub.demo.service.RecipeService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +31,14 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class RecipeController {
     private final RecipeService recipeService;
+    private final RecipeSeedService recipeSeedService;
+
+    /** Adds the bundled starter recipes the family does not have yet. Safe to call again. */
+    @PostMapping("/starter-pack")
+    public ResponseEntity<ApiResponse<StarterRecipesResponse>> addStarterPack(@AuthenticationPrincipal Family family) {
+        StarterRecipesResponse result = recipeSeedService.seedStarterRecipes(family);
+        return ResponseEntity.ok(new ApiResponse<>(result, "Starter recipes added"));
+    }
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<RecipeSummaryResponse>>> getRecipes(@AuthenticationPrincipal Family family) {

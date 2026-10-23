@@ -7,6 +7,8 @@ import com.familyhub.demo.security.JwtAuthenticationFilter;
 import com.familyhub.demo.security.WithMockFamily;
 import com.familyhub.demo.service.FamilyService;
 import com.familyhub.demo.service.JwtService;
+import com.familyhub.demo.dto.StarterRecipesResponse;
+import com.familyhub.demo.service.RecipeSeedService;
 import com.familyhub.demo.service.RecipeService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,6 +50,22 @@ class RecipeControllerTest {
 
     @MockitoBean
     RecipeService recipeService;
+
+    @MockitoBean
+    RecipeSeedService recipeSeedService;
+
+    @Test
+    @WithMockFamily
+    void addStarterPack_returnsCounts() throws Exception {
+        given(recipeSeedService.seedStarterRecipes(any(Family.class)))
+                .willReturn(new StarterRecipesResponse(24, 2));
+
+        mockMvc.perform(post("/api/recipes/starter-pack"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.added").value(24))
+                .andExpect(jsonPath("$.data.skipped").value(2))
+                .andExpect(jsonPath("$.message").value("Starter recipes added"));
+    }
 
     @Test
     @WithMockFamily

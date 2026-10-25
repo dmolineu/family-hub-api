@@ -7,6 +7,7 @@ import com.familyhub.demo.dto.RecipeDetailResponse;
 import com.familyhub.demo.dto.RecipeSummaryResponse;
 import com.familyhub.demo.dto.UpdateRecipeRequest;
 import com.familyhub.demo.model.Family;
+import com.familyhub.demo.dto.RecipePackResponse;
 import com.familyhub.demo.dto.StarterRecipesResponse;
 import com.familyhub.demo.service.RecipeSeedService;
 import com.familyhub.demo.service.RecipeService;
@@ -38,6 +39,22 @@ public class RecipeController {
     public ResponseEntity<ApiResponse<StarterRecipesResponse>> addStarterPack(@AuthenticationPrincipal Family family) {
         StarterRecipesResponse result = recipeSeedService.seedStarterRecipes(family);
         return ResponseEntity.ok(new ApiResponse<>(result, "Starter recipes added"));
+    }
+
+    /** The bundled recipe packs a family can add. */
+    @GetMapping("/packs")
+    public ResponseEntity<ApiResponse<List<RecipePackResponse>>> listPacks() {
+        return ResponseEntity.ok(new ApiResponse<>(recipeSeedService.listPacks(), ""));
+    }
+
+    /** Adds the pack's recipes the family does not have yet. Safe to call again. */
+    @PostMapping("/packs/{packId}")
+    public ResponseEntity<ApiResponse<StarterRecipesResponse>> addPack(
+            @PathVariable String packId,
+            @AuthenticationPrincipal Family family
+    ) {
+        StarterRecipesResponse result = recipeSeedService.seedPack(packId, family);
+        return ResponseEntity.ok(new ApiResponse<>(result, "Recipe pack added"));
     }
 
     @GetMapping

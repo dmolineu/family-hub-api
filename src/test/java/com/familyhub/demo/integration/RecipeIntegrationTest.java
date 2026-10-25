@@ -1,6 +1,7 @@
 package com.familyhub.demo.integration;
 
 import com.familyhub.demo.config.TestcontainersConfig;
+import com.familyhub.demo.service.RecipePackCatalog;
 import com.familyhub.demo.service.StarterRecipeBundle;
 import com.familyhub.demo.service.ImportedRecipe;
 import com.familyhub.demo.service.RecipeImportService;
@@ -192,6 +193,34 @@ class RecipeIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.added").value(0))
                 .andExpect(jsonPath("$.data.skipped").value(StarterRecipeBundle.load().size()));
+    }
+
+    @Test
+    void quickAndHealthyPack_isListedAddedAndSafeToRepeat() throws Exception {
+        String token = registerAndToken(uniqueUsername(), "Pack Family");
+        int starterCount = StarterRecipeBundle.load().size();
+        int packSize = RecipePackCatalog.recipes(RecipePackCatalog.find("quick-healthy").orElseThrow()).size();
+
+        mockMvc.perform(get("/api/recipes/packs").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[*].id").value(org.hamcrest.Matchers.contains("starter", "quick-healthy")))
+                .andExpect(jsonPath("$.data[1].recipeCount").value(packSize));
+
+        mockMvc.perform(post("/api/recipes/packs/quick-healthy").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.added").value(packSize))
+                .andExpect(jsonPath("$.data.skipped").value(0));
+
+        mockMvc.perform(get("/api/recipes").header("Authorization", "Bearer " + token))
+                .andExpect(jsonPath("$.data.length()").value(starterCount + packSize))
+                .andExpect(jsonPath("$.data[?(@.tags[?(@ == 'quick & healthy')])]").isNotEmpty());
+
+        mockMvc.perform(post("/api/recipes/packs/quick-healthy").header("Authorization", "Bearer " + token))
+                .andExpect(jsonPath("$.data.added").value(0))
+                .andExpect(jsonPath("$.data.skipped").value(packSize));
+
+        mockMvc.perform(post("/api/recipes/packs/nope").header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound());
     }
 
     private String registerAndToken(String username, String familyName) throws Exception {

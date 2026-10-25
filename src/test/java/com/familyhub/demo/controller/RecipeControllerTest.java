@@ -7,7 +7,9 @@ import com.familyhub.demo.security.JwtAuthenticationFilter;
 import com.familyhub.demo.security.WithMockFamily;
 import com.familyhub.demo.service.FamilyService;
 import com.familyhub.demo.service.JwtService;
+import com.familyhub.demo.dto.RecipePackResponse;
 import com.familyhub.demo.dto.StarterRecipesResponse;
+import com.familyhub.demo.exception.ResourceNotFoundException;
 import com.familyhub.demo.service.RecipeSeedService;
 import com.familyhub.demo.service.RecipeService;
 import org.junit.jupiter.api.Test;
@@ -65,6 +67,43 @@ class RecipeControllerTest {
                 .andExpect(jsonPath("$.data.added").value(24))
                 .andExpect(jsonPath("$.data.skipped").value(2))
                 .andExpect(jsonPath("$.message").value("Starter recipes added"));
+    }
+
+    @Test
+    @WithMockFamily
+    void listPacks_returnsTheBundledPacks() throws Exception {
+        given(recipeSeedService.listPacks()).willReturn(List.of(
+                new RecipePackResponse("starter", "Starter recipes", "Family favourites", 26),
+                new RecipePackResponse("quick-healthy", "Quick & healthy", "Weeknight meals", 25)));
+
+        mockMvc.perform(get("/api/recipes/packs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[1].id").value("quick-healthy"))
+                .andExpect(jsonPath("$.data[1].name").value("Quick & healthy"))
+                .andExpect(jsonPath("$.data[1].recipeCount").value(25));
+    }
+
+    @Test
+    @WithMockFamily
+    void addPack_returnsCounts() throws Exception {
+        given(recipeSeedService.seedPack(eq("quick-healthy"), any(Family.class)))
+                .willReturn(new StarterRecipesResponse(25, 0));
+
+        mockMvc.perform(post("/api/recipes/packs/quick-healthy"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.added").value(25))
+                .andExpect(jsonPath("$.data.skipped").value(0))
+                .andExpect(jsonPath("$.message").value("Recipe pack added"));
+    }
+
+    @Test
+    @WithMockFamily
+    void addPack_unknownPack_returns404() throws Exception {
+        given(recipeSeedService.seedPack(eq("nope"), any(Family.class)))
+                .willThrow(new ResourceNotFoundException("Recipe pack not found: nope"));
+
+        mockMvc.perform(post("/api/recipes/packs/nope"))
+                .andExpect(status().isNotFound());
     }
 
     @Test

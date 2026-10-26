@@ -131,7 +131,7 @@ public class ParentPinService {
 
     private void requireFamilyPassword(Family family, String password) {
         if (password == null || !passwordEncoder.matches(password, family.getPasswordHash())) {
-            throw new AccessDeniedException("That isn't the family password.");
+            throw new AccessDeniedException("That isn't the password this family signs in with.");
         }
     }
 

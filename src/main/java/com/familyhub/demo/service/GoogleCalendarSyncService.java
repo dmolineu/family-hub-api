@@ -151,9 +151,10 @@ public class GoogleCalendarSyncService {
                 .filter(e -> e.getRecurringEventId() != null)
                 .toList();
 
+        Map<Event, GoogleSyncedCalendar> owners = ownersByIdentity(eventsByCalendar);
         List<CalendarEvent> parentEntities = new ArrayList<>();
         for (Event event : parentsAndRegular) {
-            GoogleSyncedCalendar syncedCal = resolveCalendar(event, eventsByCalendar);
+            GoogleSyncedCalendar syncedCal = resolveCalendar(event, owners, eventsByCalendar);
             parentEntities.add(googleEventMapper.toEntity(event, syncedCal));
         }
         calendarEventRepository.saveAll(parentEntities);
@@ -169,7 +170,7 @@ public class GoogleCalendarSyncService {
                 continue;
             }
 
-            GoogleSyncedCalendar syncedCal = resolveCalendar(exception, eventsByCalendar);
+            GoogleSyncedCalendar syncedCal = resolveCalendar(exception, owners, eventsByCalendar);
             CalendarEvent exceptionEntity = googleEventMapper.toExceptionEntity(
                     exception, syncedCal, parentEntity.get());
             calendarEventRepository.save(exceptionEntity);
@@ -313,12 +314,25 @@ public class GoogleCalendarSyncService {
         return allEvents;
     }
 
+    /**
+     * Which calendar each fetched event came from, keyed by the event object itself.
+     * Identity, not equals(): Google's Event.equals compares every field reflectively,
+     * and searching a list with it made a first sync of a few thousand events take
+     * minutes of CPU (quadratic). One map built per sync keeps it linear.
+     */
+    private static Map<Event, GoogleSyncedCalendar> ownersByIdentity(
+            Map<GoogleSyncedCalendar, List<Event>> eventsByCalendar) {
+        Map<Event, GoogleSyncedCalendar> owners = new java.util.IdentityHashMap<>();
+        eventsByCalendar.forEach((calendar, events) -> events.forEach(e -> owners.put(e, calendar)));
+        return owners;
+    }
+
     private GoogleSyncedCalendar resolveCalendar(Event event,
+                                                  Map<Event, GoogleSyncedCalendar> owners,
                                                   Map<GoogleSyncedCalendar, List<Event>> eventsByCalendar) {
-        for (Map.Entry<GoogleSyncedCalendar, List<Event>> entry : eventsByCalendar.entrySet()) {
-            if (entry.getValue().contains(event)) {
-                return entry.getKey();
-            }
+        GoogleSyncedCalendar owner = owners.get(event);
+        if (owner != null) {
+            return owner;
         }
         log.warn("Could not resolve calendar for event {} — falling back to first calendar", event.getId());
         return eventsByCalendar.keySet().iterator().next();

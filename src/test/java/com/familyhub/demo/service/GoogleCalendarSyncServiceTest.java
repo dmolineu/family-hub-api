@@ -602,4 +602,26 @@ class GoogleCalendarSyncServiceTest {
 
         return calendarClient;
     }
+
+    /**
+     * A real primary calendar holds thousands of events; the first sync must not
+     * scale with the square of that (it ran for minutes on a family's calendar).
+     */
+    @Test
+    void persistFullSync_handlesAFamilySizedCalendarQuickly() {
+        java.util.List<Event> events = new ArrayList<>();
+        for (int i = 0; i < 4000; i++) {
+            Event event = createTimedGoogleEvent("event-" + i, "Practice " + i,
+                    "2024-01-01T09:00:00-08:00", "2024-01-01T10:00:00-08:00");
+            event.setDescription("Bring water and shin guards");
+            event.setLocation("Field " + (i % 7));
+            event.setStatus("confirmed");
+            events.add(event);
+        }
+
+        org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(5),
+                () -> syncService.persistFullSync(syncedCal, events));
+
+        verify(googleEventMapper, org.mockito.Mockito.times(4000)).toEntity(any(Event.class), eq(syncedCal));
+    }
 }

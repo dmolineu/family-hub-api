@@ -23,7 +23,9 @@ import java.util.List;
 
 /**
  * Everything a family owns, as one file. Credentials, parents' PINs and Google tokens
- * are never part of it; Google-synced calendar events are left out because they re-sync. The {@code ref}
+ * are never part of it; nor are screensaver photos, which would make the file huge
+ * (they live in the database, so pg_dump carries them, and a restore leaves them be).
+ * Google-synced calendar events are left out because they re-sync. The {@code ref}
  * fields are the ids at export time and only serve to link rows inside the document; a
  * restore assigns new ids.
  */

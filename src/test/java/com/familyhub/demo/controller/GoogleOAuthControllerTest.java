@@ -68,6 +68,18 @@ class GoogleOAuthControllerTest {
 
     @Test
     @WithMockFamily
+    void getAuthorizationUrl_whenGoogleIsNotSetUp_returns503WithTheReason() throws Exception {
+        when(googleOAuthService.buildAuthorizationUrl(MEMBER_ID)).thenThrow(
+                new com.familyhub.demo.exception.ServiceUnavailableException(
+                        "Google Calendar isn't set up on this server yet."));
+
+        mockMvc.perform(get("/api/google/auth").param("memberId", MEMBER_ID.toString()))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.message").value("Google Calendar isn't set up on this server yet."));
+    }
+
+    @Test
+    @WithMockFamily
     void getAuthorizationUrl_wrongFamily_returns403() throws Exception {
         doThrow(new AccessDeniedException("Unauthorized"))
                 .when(familyMemberService).findById(any(), eq(MEMBER_ID));

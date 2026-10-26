@@ -65,6 +65,23 @@ class GoogleOAuthServiceTest {
     }
 
     @Test
+    void buildAuthorizationUrl_withoutAClientId_saysGoogleIsNotSetUp() {
+        config.setClientId("");
+
+        assertThatThrownBy(() -> oauthService.buildAuthorizationUrl(UUID.randomUUID()))
+                .isInstanceOf(com.familyhub.demo.exception.ServiceUnavailableException.class)
+                .hasMessageContaining("isn't set up on this server yet");
+    }
+
+    @Test
+    void buildAuthorizationUrl_withoutAClientSecret_saysGoogleIsNotSetUp() {
+        config.setClientSecret(" ");
+
+        assertThatThrownBy(() -> oauthService.buildAuthorizationUrl(UUID.randomUUID()))
+                .isInstanceOf(com.familyhub.demo.exception.ServiceUnavailableException.class);
+    }
+
+    @Test
     void buildAuthorizationUrl_containsRequiredParams() {
         UUID memberId = UUID.randomUUID();
         String stateToken = UUID.randomUUID().toString();

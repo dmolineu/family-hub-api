@@ -1,5 +1,6 @@
 package com.familyhub.demo.service;
 
+import com.familyhub.demo.exception.ServiceUnavailableException;
 import com.familyhub.demo.config.GoogleOAuthConfig;
 import com.familyhub.demo.dto.GoogleConnectionStatus;
 import com.familyhub.demo.dto.GoogleTokenResponse;
@@ -75,6 +76,13 @@ public class GoogleOAuthService {
     }
 
     public String buildAuthorizationUrl(UUID memberId) {
+        // Without a client the link would carry an empty client_id and Google would show
+        // its own "Access blocked" page; say what is missing instead.
+        if (isBlank(config.getClientId()) || isBlank(config.getClientSecret())) {
+            throw new ServiceUnavailableException(
+                    "Google Calendar isn't set up on this server yet. An administrator needs to add "
+                            + "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.");
+        }
         String state = stateStore.generateState(memberId);
         return AUTH_URL + "?" +
                 "client_id=" + encode(config.getClientId()) +
@@ -179,5 +187,9 @@ public class GoogleOAuthService {
 
     private static String encode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

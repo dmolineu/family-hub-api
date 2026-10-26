@@ -1,11 +1,13 @@
 package com.familyhub.demo.service;
 
 import com.familyhub.demo.dto.AuthResponse;
+import com.familyhub.demo.dto.ChangePasswordRequest;
 import com.familyhub.demo.dto.LoginRequest;
 import com.familyhub.demo.dto.RegisterRequest;
 import com.familyhub.demo.dto.UsernameCheckResponse;
 import com.familyhub.demo.exception.BadRequestException;
 import com.familyhub.demo.exception.InvalidCredentialException;
+import com.familyhub.demo.exception.ResourceNotFoundException;
 import com.familyhub.demo.exception.UsernameAlreadyExists;
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.repository.FamilyRepository;
@@ -15,6 +17,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.List;
@@ -229,5 +232,69 @@ class AuthServiceTest {
         UsernameCheckResponse result = authService.checkUsername("testfamily");
 
         assertThat(result.available()).isFalse();
+    }
+
+    @Test
+    void changePassword_wrongCurrentPassword_isRefusedAndChangesNothing() {
+        when(familyRepository.findById(family.getId())).thenReturn(Optional.of(family));
+        when(passwordEncoder.matches("wrong-password", family.getPasswordHash())).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.changePassword(
+                family, new ChangePasswordRequest("wrong-password", "a-new-password")))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessage("That isn't the password this family signs in with.");
+
+        verify(familyRepository, never()).save(any());
+        assertThat(family.getPasswordVersion()).isZero();
+    }
+
+    @Test
+    void changePassword_storesTheNewHash_signsOutOtherDevices_andKeepsThisOne() {
+        when(familyRepository.findById(family.getId())).thenReturn(Optional.of(family));
+        when(passwordEncoder.matches("old-password", family.getPasswordHash())).thenReturn(true);
+        when(passwordEncoder.encode("a-new-password")).thenReturn("new-hash");
+        when(familyRepository.save(family)).thenReturn(family);
+        when(jwtService.generateToken(argThat(f -> f.getPasswordVersion() == 1))).thenReturn("fresh-token");
+
+        AuthResponse response = authService.changePassword(
+                family, new ChangePasswordRequest("old-password", "a-new-password"));
+
+        assertThat(family.getPasswordHash()).isEqualTo("new-hash");
+        assertThat(family.getPasswordVersion()).isEqualTo(1);
+        assertThat(response.token()).isEqualTo("fresh-token");
+        assertThat(response.family().name()).isEqualTo("Test Family");
+    }
+
+    @Test
+    void resetPassword_unknownUsername_saysSo() {
+        when(familyRepository.findByUsername("nobody")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.resetPassword("nobody", "a-new-password"))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("No family signs in as \"nobody\".");
+    }
+
+    @Test
+    void resetPassword_tooShortOrTooLong_isRefusedBeforeLookingAnythingUp() {
+        assertThatThrownBy(() -> authService.resetPassword("testfamily", "short"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("A password is 8 to 100 characters.");
+        assertThatThrownBy(() -> authService.resetPassword("testfamily", "x".repeat(101)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("A password is 8 to 100 characters.");
+
+        verify(familyRepository, never()).findByUsername(anyString());
+    }
+
+    @Test
+    void resetPassword_storesTheNewHash_andSignsOutEveryDevice() {
+        when(familyRepository.findByUsername("testfamily")).thenReturn(Optional.of(family));
+        when(passwordEncoder.encode("a-new-password")).thenReturn("new-hash");
+
+        authService.resetPassword("testfamily", "a-new-password");
+
+        assertThat(family.getPasswordHash()).isEqualTo("new-hash");
+        assertThat(family.getPasswordVersion()).isEqualTo(1);
+        verify(familyRepository).save(family);
     }
 }

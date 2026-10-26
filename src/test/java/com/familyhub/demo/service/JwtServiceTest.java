@@ -100,4 +100,26 @@ class JwtServiceTest {
         assertThatThrownBy(() -> jwtService.extractSubject(wrongIssuerToken))
                 .isInstanceOf(JwtException.class);
     }
+
+    @Test
+    void generateToken_carriesThePasswordVersion() {
+        family.setPasswordVersion(3);
+
+        String token = jwtService.generateToken(family);
+
+        assertThat(jwtService.extractPasswordVersion(token)).isEqualTo(3);
+    }
+
+    @Test
+    void extractPasswordVersion_aTokenFromBeforeVersionsExisted_isZero() {
+        String token = Jwts.builder()
+                .subject(family.getId().toString())
+                .issuer(ISSUER)
+                .signWith(Keys.hmacShaKeyFor(Decoders.BASE64.decode(TEST_SECRET)))
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + EXPIRATION))
+                .compact();
+
+        assertThat(jwtService.extractPasswordVersion(token)).isZero();
+    }
 }

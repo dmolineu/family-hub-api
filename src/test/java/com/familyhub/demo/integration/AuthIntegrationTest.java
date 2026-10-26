@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -184,5 +185,88 @@ class AuthIntegrationTest {
                         .content(registerJson(username)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("Username " + username + " already exists."));
+    }
+
+    private String registerAndGetToken(String username) throws Exception {
+        String body = mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(registerJson(username)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return JsonPath.read(body, "$.data.token");
+    }
+
+    private org.springframework.test.web.servlet.ResultActions login(String username, String password) throws Exception {
+        return mockMvc.perform(post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        { "username": "%s", "password": "%s" }
+                        """.formatted(username, password)));
+    }
+
+    private org.springframework.test.web.servlet.ResultActions changePassword(
+            String token, String currentPassword, String newPassword) throws Exception {
+        var request = put("/api/auth/password")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        { "currentPassword": "%s", "newPassword": "%s" }
+                        """.formatted(currentPassword, newPassword));
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        return mockMvc.perform(request);
+    }
+
+    @Test
+    void changePassword_signsOutEveryOtherDevice_andKeepsThisOne() throws Exception {
+        String username = uniqueUsername();
+        String wallToken = registerAndGetToken(username);
+        String phoneToken = JsonPath.read(login(username, "password123")
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(), "$.data.token");
+
+        String body = changePassword(phoneToken, "password123", "a-new-password")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.family.name").value("Integration Family"))
+                .andReturn().getResponse().getContentAsString();
+        String freshToken = JsonPath.read(body, "$.data.token");
+
+        mockMvc.perform(get("/api/family").header("Authorization", "Bearer " + wallToken))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/family").header("Authorization", "Bearer " + phoneToken))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/family").header("Authorization", "Bearer " + freshToken))
+                .andExpect(status().isOk());
+        login(username, "password123").andExpect(status().isUnauthorized());
+        login(username, "a-new-password").andExpect(status().isOk());
+    }
+
+    @Test
+    void changePassword_wrongCurrentPassword_isRefusedAndStaysSignedIn() throws Exception {
+        String username = uniqueUsername();
+        String token = registerAndGetToken(username);
+
+        changePassword(token, "not-the-password", "a-new-password")
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("That isn't the password this family signs in with."));
+
+        mockMvc.perform(get("/api/family").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+        login(username, "password123").andExpect(status().isOk());
+    }
+
+    @Test
+    void changePassword_withoutSigningIn_returns401() throws Exception {
+        changePassword(null, "password123", "a-new-password")
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void changePassword_tooShort_returns400() throws Exception {
+        String token = registerAndGetToken(uniqueUsername());
+
+        changePassword(token, "password123", "short")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].message").value("Password must be between 8 - 100 characters"));
     }
 }

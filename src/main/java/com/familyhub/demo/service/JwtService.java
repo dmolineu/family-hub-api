@@ -17,17 +17,30 @@ import java.util.function.Function;
 @Service
 @RequiredArgsConstructor
 public class JwtService {
+    /** The family's password version when the token was issued; see {@link Family#getPasswordVersion()}. */
+    static final String PASSWORD_VERSION_CLAIM = "pwv";
+
     private final JwtConfig jwtConfig;
 
 
     public String generateToken(Family family) {
         return Jwts.builder()
                 .subject(family.getId().toString())
+                .claim(PASSWORD_VERSION_CLAIM, family.getPasswordVersion())
                 .issuer(jwtConfig.getIssuer())
                 .signWith(getSignInKey())
                 .issuedAt(new Date(System.currentTimeMillis()))
                 .expiration(new Date(System.currentTimeMillis() + jwtConfig.getExpiration()))
                 .compact();
+    }
+
+    /**
+     * The password version the token was issued under; 0 for tokens issued before
+     * versions existed.
+     */
+    public int extractPasswordVersion(String token) {
+        Integer version = extractClaim(token, claims -> claims.get(PASSWORD_VERSION_CLAIM, Integer.class));
+        return version == null ? 0 : version;
     }
 
     public String extractSubject(String token) {

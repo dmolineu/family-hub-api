@@ -42,6 +42,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 // 1.) validate
                 String uuid = jwtService.extractSubject(token);
                 Family family = familyService.findFamilyById(UUID.fromString(uuid));
+                // A password change bumps the version; tokens from before it no longer sign in.
+                if (jwtService.extractPasswordVersion(token) != family.getPasswordVersion()) {
+                    throw new JwtException("Token was issued before the last password change");
+                }
 
                 // 2.) Set security context
                 UsernamePasswordAuthenticationToken auth =

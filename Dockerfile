@@ -29,6 +29,8 @@ EXPOSE 8080
 # profile uses an in-memory H2 database and loses everything on restart.
 ENV SPRING_PROFILES_ACTIVE=prod
 # JVM flags are overridable per host (a Pi wants -XX:+UseSerialGC and a bigger heap
-# than a 512 MB VPS). The shell wrapper is what lets JAVA_OPTS expand.
+# than a 512 MB VPS). The shell wrapper is what lets JAVA_OPTS expand; "$@" passes
+# container arguments through, so `docker compose run --rm api reset-password <username>`
+# runs that command instead of the server.
 ENV JAVA_OPTS="-Xmx256m -Xms128m"
-ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar app.jar"]
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar app.jar \"$@\"", "--"]

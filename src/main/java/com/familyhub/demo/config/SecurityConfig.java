@@ -66,6 +66,8 @@ public class SecurityConfig {
                     auth.requestMatchers("/h2-console/**").permitAll();
                 }
                 auth
+                    // Changing the password is the one auth endpoint that needs a token.
+                    .requestMatchers("/api/auth/password").authenticated()
                     .requestMatchers("/api/auth/**").permitAll()
                     .requestMatchers("/api/health").permitAll()
                     .requestMatchers("/api/google/callback").permitAll()

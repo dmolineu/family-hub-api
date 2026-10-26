@@ -36,6 +36,15 @@ public class Family implements UserDetails {
     @Column(nullable = false)
     private String passwordHash;
 
+    /**
+     * Bumped on every password change. Sign-in tokens carry the version they were
+     * issued under, and a token from an older version is refused, which signs out
+     * every device that used the old password.
+     */
+    @JsonIgnore
+    @Column(name = "password_version", nullable = false)
+    private int passwordVersion;
+
     @Column(nullable = false, length = 100)
     private String timezone = "America/Los_Angeles";
 

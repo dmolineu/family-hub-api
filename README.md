@@ -8,6 +8,10 @@
 > - The image defaults to the `prod` profile and honours `JAVA_OPTS`.
 > - `/h2-console` and relaxed frame options exist only when `security.h2-console.enabled`
 >   is true (the dev profile); prod sends `X-Frame-Options: DENY`.
+> - A forgotten sign-in password is reset from the server with
+>   `reset-password <username>` (see [Resetting a forgotten password](#resetting-a-forgotten-password));
+>   there is deliberately no forgotten-password screen. `PUT /api/auth/password` changes it
+>   from a signed-in device, and any change signs out every other device.
 > - CI builds a multi-arch image (amd64 + arm64) and needs no repository secrets; the
 >   release-please and add-to-project workflows are gone because this repo is push-mirrored
 >   from Gitea to GitHub.
@@ -43,11 +47,11 @@ FamilyHub runs on a single shared household account: one family login, with memb
 
 ## API
 
-Base path: `/api`. All routes require a `Bearer` JWT except `/api/health`, `/api/auth/**`, and the Google OAuth callback.
+Base path: `/api`. All routes require a `Bearer` JWT except `/api/health`, `/api/auth/**` (apart from `PUT /api/auth/password`), and the Google OAuth callback.
 
 | Group | Base | What |
 |-------|------|------|
-| Auth | `/api/auth` | `register`, `login`, `check-username` |
+| Auth | `/api/auth` | `register`, `login`, `check-username`, `password` (change, signed in) |
 | Family | `/api/family` | get / update / delete the family |
 | Members | `/api/family/members` | CRUD member profiles |
 | Calendar | `/api/calendar/events` | event CRUD (range query, recurrence) |
@@ -116,6 +120,24 @@ Tests run against a real PostgreSQL via **Testcontainers** (Flyway migrations ap
 - **Docker** — multi-stage build (`eclipse-temurin:21` → `21-jre`, non-root user). Images publish to the **GitHub Container Registry**: `ghcr.io/joe-bor/family-hub-api` (tagged `latest`, commit SHA, and semver on release).
 - **Versioning** — automated with **release-please**; merging the release PR cuts a GitHub Release and retags the image. Current release: **v1.6.0**.
 - **Production** runs as a container on a DigitalOcean droplet against Neon PostgreSQL. See the [deployment guide](https://github.com/joe-bor/family-hub/blob/main/docs/deployment-guide.md).
+
+## Resetting a forgotten password
+
+The family signs in with one shared password and the app has no forgotten-password
+screen, so a lost password is reset by whoever runs the server. From the directory with
+the Compose file:
+
+```bash
+docker compose run --rm api reset-password <username>
+```
+
+It asks for the new password twice (hidden) and never accepts it as an argument, so it
+stays out of shell history. It starts the app without its web server or scheduled jobs,
+uses the same database settings as the running server, and signs out every device: each
+token carries the password version it was issued under, and a reset bumps the version.
+Scripts can pipe the password instead: `printf '%s\n%s\n' "$pw" "$pw" | docker compose run
+-T --rm api reset-password <username>`. Exit codes: 0 done, 1 refused (unknown username,
+passwords differ, outside 8–100 characters), 2 wrong usage.
 
 ## Project structure
 

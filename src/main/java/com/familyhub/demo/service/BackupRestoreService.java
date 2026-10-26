@@ -204,6 +204,7 @@ public class BackupRestoreService {
             member.setColor(backup.color());
             member.setAvatarUrl(backup.avatarUrl());
             member.setEmail(backup.email());
+            member.setBirthday(backup.birthday());
             member = familyMemberRepository.save(member);
             existingByName.put(normalize(member.getName()), member);
             idsByRef.put(backup.ref(), member.getId());

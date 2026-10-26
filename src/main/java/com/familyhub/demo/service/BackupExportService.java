@@ -94,7 +94,8 @@ public class BackupExportService {
 
     private List<MemberBackup> members(Family family) {
         return familyMemberRepository.findByFamily(family).stream()
-                .map(m -> new MemberBackup(ref(m.getId()), m.getName(), m.getColor(), m.getAvatarUrl(), m.getEmail()))
+                .map(m -> new MemberBackup(ref(m.getId()), m.getName(), m.getColor(), m.getAvatarUrl(), m.getEmail(),
+                        m.getBirthday()))
                 .toList();
     }
 

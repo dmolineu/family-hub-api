@@ -36,4 +36,28 @@ public class FamilyMember {
 
     @Email
     private String email;
+
+    @Column(name = "birth_month")
+    private Integer birthMonth;
+
+    @Column(name = "birth_day")
+    private Integer birthDay;
+
+    @Column(name = "birth_year")
+    private Integer birthYear;
+
+    /** The birthday as one value, or null when none is set. */
+    public com.familyhub.demo.dto.MemberBirthday getBirthday() {
+        if (birthMonth == null || birthDay == null) {
+            return null;
+        }
+        return new com.familyhub.demo.dto.MemberBirthday(birthMonth, birthDay, birthYear);
+    }
+
+    /** Sets or clears (null) the birthday; callers validate first. */
+    public void setBirthday(com.familyhub.demo.dto.MemberBirthday birthday) {
+        this.birthMonth = birthday == null ? null : birthday.month();
+        this.birthDay = birthday == null ? null : birthday.day();
+        this.birthYear = birthday == null ? null : birthday.year();
+    }
 }

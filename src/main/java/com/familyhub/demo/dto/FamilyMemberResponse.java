@@ -10,8 +10,14 @@ public record FamilyMemberResponse(
         String name,
         FamilyColor color,
         String email,
-        String avatarUrl
+        String avatarUrl,
+        MemberBirthday birthday
 ) {
+
+    /** The shape before birthdays existed. */
+    public FamilyMemberResponse(UUID id, String name, FamilyColor color, String email, String avatarUrl) {
+        this(id, name, color, email, avatarUrl, null);
+    }
 
     public static FamilyMemberResponse toDto(FamilyMember familyMember) {
         return new FamilyMemberResponse(
@@ -19,7 +25,8 @@ public record FamilyMemberResponse(
                 familyMember.getName(),
                 familyMember.getColor(),
                 familyMember.getEmail(),
-                familyMember.getAvatarUrl()
+                familyMember.getAvatarUrl(),
+                familyMember.getBirthday()
         );
     }
 }

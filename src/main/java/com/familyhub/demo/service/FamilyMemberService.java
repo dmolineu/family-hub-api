@@ -16,6 +16,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -68,6 +69,10 @@ public class FamilyMemberService {
         toBeUpdated.setColor(update.color());
         toBeUpdated.setAvatarUrl(update.avatarUrl());
         toBeUpdated.setEmail(update.email());
+        if (update.birthday() != null) {
+            update.birthday().validate(LocalDate.now());
+        }
+        toBeUpdated.setBirthday(update.birthday());
 
         // Save
         FamilyMember saved = familyMemberRepository.save(toBeUpdated);

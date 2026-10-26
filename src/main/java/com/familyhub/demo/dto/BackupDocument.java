@@ -59,7 +59,9 @@ public record BackupDocument(
             @NotBlank String name,
             @NotNull FamilyColor color,
             String avatarUrl,
-            String email
+            String email,
+            /** Absent in backups taken before birthdays existed. */
+            MemberBirthday birthday
     ) {}
 
     public record ChoreBackup(

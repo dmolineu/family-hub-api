@@ -20,6 +20,13 @@ public record FamilyMemberRequest(
     String email,
 
     @Size(max = 254, message = "Avatar url is too long")
-    String avatarUrl
+    String avatarUrl,
+
+    /** Optional; omitted or null clears it on update. */
+    MemberBirthday birthday
 ) {
+    /** The shape before birthdays existed. */
+    public FamilyMemberRequest(String name, FamilyColor color, String email, String avatarUrl) {
+        this(name, color, email, avatarUrl, null);
+    }
 }

@@ -65,6 +65,9 @@ public class ChoreTemplate {
         return cadence == ChoreCadence.WEEKLY && !getDaysOfWeek().isEmpty();
     }
 
+    /** Points a parent set for this chore (1 to 100); null for chores made before points. */
+    private Integer points;
+
     private LocalDateTime archivedAt;
 
     @CreationTimestamp

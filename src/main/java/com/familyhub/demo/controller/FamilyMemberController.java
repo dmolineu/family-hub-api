@@ -3,8 +3,11 @@ package com.familyhub.demo.controller;
 import com.familyhub.demo.dto.ApiResponse;
 import com.familyhub.demo.dto.FamilyMemberRequest;
 import com.familyhub.demo.dto.FamilyMemberResponse;
+import com.familyhub.demo.dto.MemberPinRequest;
+import com.familyhub.demo.dto.MemberRoleRequest;
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.service.FamilyMemberService;
+import com.familyhub.demo.service.ParentPinService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -20,6 +23,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class FamilyMemberController {
     private final FamilyMemberService familyMemberService;
+    private final ParentPinService parentPinService;
 
 
     @GetMapping
@@ -66,6 +70,27 @@ public class FamilyMemberController {
             @PathVariable UUID id
     ) {
         familyMemberService.deleteFamilyMember(family, id);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Makes a member a parent or a kid; needs the family password. */
+    @PutMapping("/{id}/role")
+    public ResponseEntity<ApiResponse<FamilyMemberResponse>> setRole(
+            @AuthenticationPrincipal Family family,
+            @PathVariable UUID id,
+            @Valid @RequestBody MemberRoleRequest request
+    ) {
+        return ResponseEntity.ok(new ApiResponse<>(parentPinService.setRole(family, id, request), "Role updated"));
+    }
+
+    /** Sets a parent's own PIN; needs the family password. */
+    @PutMapping("/{id}/pin")
+    public ResponseEntity<Void> setPin(
+            @AuthenticationPrincipal Family family,
+            @PathVariable UUID id,
+            @Valid @RequestBody MemberPinRequest request
+    ) {
+        parentPinService.setPin(family, id, request);
         return ResponseEntity.noContent().build();
     }
 }

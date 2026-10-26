@@ -16,6 +16,17 @@ public record UpdateCurrentPeriodCompletionRequest(
         LocalDate periodStartDate,
 
         /** Required for an unassigned chore; defaults to the assignee otherwise. */
-        UUID completedByMemberId
+        UUID completedByMemberId,
+
+        /** Unticking an approved kid's chore: the parent taking the points back. */
+        UUID approverMemberId,
+
+        /** That parent's PIN. */
+        String pin
 ) {
+
+    /** The shape before approvals: no parent PIN given. */
+    public UpdateCurrentPeriodCompletionRequest(ChoreScope scope, LocalDate periodStartDate, UUID completedByMemberId) {
+        this(scope, periodStartDate, completedByMemberId, null, null);
+    }
 }

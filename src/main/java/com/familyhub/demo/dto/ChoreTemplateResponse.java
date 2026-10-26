@@ -17,6 +17,15 @@ public record ChoreTemplateResponse(
         LocalDate activeFrom,
         boolean archived,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        /** Points a parent set (1 to 100); null for chores made before points. */
+        Integer points
 ) {
+
+    /** The shape before points existed. */
+    public ChoreTemplateResponse(UUID id, String title, UUID assignedToMemberId, ChoreCadence cadence,
+                                 List<DayOfWeek> daysOfWeek, LocalDate activeFrom, boolean archived,
+                                 LocalDateTime createdAt, LocalDateTime updatedAt) {
+        this(id, title, assignedToMemberId, cadence, daysOfWeek, activeFrom, archived, createdAt, updatedAt, null);
+    }
 }

@@ -2,6 +2,8 @@ package com.familyhub.demo.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -41,4 +43,13 @@ public class ChorePeriodCompletion {
 
     @Column(nullable = false)
     private LocalDateTime completedAt;
+
+    /** PENDING while a kid's chore waits for a parent; APPROVED once its points count. */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    private ChoreCompletionStatus status = ChoreCompletionStatus.APPROVED;
+
+    /** Points granted on approval; null while pending. */
+    @Column(name = "points_awarded")
+    private Integer pointsAwarded;
 }

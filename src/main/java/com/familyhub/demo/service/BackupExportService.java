@@ -2,6 +2,7 @@ package com.familyhub.demo.service;
 
 import com.familyhub.demo.dto.BackupDocument;
 import com.familyhub.demo.dto.BackupDocument.CategoryBackup;
+import com.familyhub.demo.dto.BackupDocument.ActivityBackup;
 import com.familyhub.demo.dto.BackupDocument.ChoreBackup;
 import com.familyhub.demo.dto.BackupDocument.CompletionBackup;
 import com.familyhub.demo.dto.BackupDocument.EventBackup;
@@ -29,6 +30,7 @@ import com.familyhub.demo.model.RecipeTag;
 import com.familyhub.demo.model.SharedList;
 import com.familyhub.demo.model.SharedListItem;
 import com.familyhub.demo.repository.CalendarEventRepository;
+import com.familyhub.demo.repository.ChoreActivityRepository;
 import com.familyhub.demo.repository.ChorePeriodCompletionRepository;
 import com.familyhub.demo.repository.ChoreTemplateRepository;
 import com.familyhub.demo.repository.FamilyMemberRepository;
@@ -58,6 +60,7 @@ public class BackupExportService {
     private final FamilyMemberRepository familyMemberRepository;
     private final ChoreTemplateRepository choreTemplateRepository;
     private final ChorePeriodCompletionRepository chorePeriodCompletionRepository;
+    private final ChoreActivityRepository choreActivityRepository;
     private final ListPreferencesRepository listPreferencesRepository;
     private final ListCategoryRepository listCategoryRepository;
     private final SharedListRepository sharedListRepository;
@@ -88,14 +91,16 @@ public class BackupExportService {
                 recipes(family),
                 meals(family),
                 events(family),
-                themePackService.exportAll(family)
+                themePackService.exportAll(family),
+                activity(family)
         );
     }
 
     private List<MemberBackup> members(Family family) {
         return familyMemberRepository.findByFamily(family).stream()
+                // Never the PIN hash: backups carry no credentials.
                 .map(m -> new MemberBackup(ref(m.getId()), m.getName(), m.getColor(), m.getAvatarUrl(), m.getEmail(),
-                        m.getBirthday()))
+                        m.getBirthday(), m.getRole()))
                 .toList();
     }
 
@@ -117,11 +122,36 @@ public class BackupExportService {
                                         c.getPeriodStartDate(),
                                         c.getPeriodEndDate(),
                                         c.getCompletedAt(),
-                                        c.getCompletedByMember() == null ? null : ref(c.getCompletedByMember().getId())
+                                        c.getCompletedByMember() == null ? null : ref(c.getCompletedByMember().getId()),
+                                        c.getStatus(),
+                                        c.getPointsAwarded()
                                 ))
-                                .toList()
+                                .toList(),
+                        t.getPoints()
                 ))
                 .toList();
+    }
+
+    /** The whole chore log, oldest first so a restore replays it in order. */
+    private List<ActivityBackup> activity(Family family) {
+        List<ActivityBackup> lines = new java.util.ArrayList<>(
+                choreActivityRepository.findByFamilyOrderByOccurredAtDescIdDesc(family).stream()
+                        .map(a -> new ActivityBackup(
+                                a.getChoreTemplate() == null ? null : ref(a.getChoreTemplate().getId()),
+                                a.getChoreTitle(),
+                                a.getMember() == null ? null : ref(a.getMember().getId()),
+                                a.getMemberName(),
+                                a.getKind(),
+                                a.getPoints(),
+                                a.getActor() == null ? null : ref(a.getActor().getId()),
+                                a.getActorName(),
+                                a.getReason(),
+                                a.getPeriodStartDate(),
+                                a.getOccurredAt()
+                        ))
+                        .toList());
+        java.util.Collections.reverse(lines);
+        return lines;
     }
 
     private ListsBackup lists(Family family) {

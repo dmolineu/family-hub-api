@@ -3,6 +3,7 @@ package com.familyhub.demo.service;
 import com.familyhub.demo.dto.BackupDocument;
 import com.familyhub.demo.dto.BackupDocument.CategoryBackup;
 import com.familyhub.demo.dto.BackupDocument.ChoreBackup;
+import com.familyhub.demo.dto.BackupDocument.ActivityBackup;
 import com.familyhub.demo.dto.BackupDocument.CompletionBackup;
 import com.familyhub.demo.dto.BackupDocument.EventBackup;
 import com.familyhub.demo.dto.BackupDocument.ItemBackup;
@@ -15,7 +16,10 @@ import com.familyhub.demo.dto.RestoreSummary;
 import com.familyhub.demo.exception.BadRequestException;
 import com.familyhub.demo.exception.ResourceNotFoundException;
 import com.familyhub.demo.model.CalendarEvent;
+import com.familyhub.demo.model.ChoreActivity;
+import com.familyhub.demo.model.ChoreCompletionStatus;
 import com.familyhub.demo.model.ChorePeriodCompletion;
+import com.familyhub.demo.model.MemberRole;
 import com.familyhub.demo.model.ChoreTemplate;
 import com.familyhub.demo.model.EventSource;
 import com.familyhub.demo.model.Family;
@@ -33,6 +37,7 @@ import com.familyhub.demo.model.RecipeTag;
 import com.familyhub.demo.model.SharedList;
 import com.familyhub.demo.model.SharedListItem;
 import com.familyhub.demo.repository.CalendarEventRepository;
+import com.familyhub.demo.repository.ChoreActivityRepository;
 import com.familyhub.demo.repository.ChorePeriodCompletionRepository;
 import com.familyhub.demo.repository.ChoreTemplateRepository;
 import com.familyhub.demo.repository.FamilyMemberRepository;
@@ -71,6 +76,7 @@ public class BackupRestoreService {
     private final FamilyMemberRepository familyMemberRepository;
     private final ChoreTemplateRepository choreTemplateRepository;
     private final ChorePeriodCompletionRepository chorePeriodCompletionRepository;
+    private final ChoreActivityRepository choreActivityRepository;
     private final ListPreferencesRepository listPreferencesRepository;
     private final ListCategoryRepository listCategoryRepository;
     private final ListCategoryCatalogScopeRepository listCategoryCatalogScopeRepository;
@@ -107,7 +113,8 @@ public class BackupRestoreService {
         restoreLists(document, family);
         Map<String, Recipe> recipes = restoreRecipes(document.recipes(), family);
         restoreMeals(document.meals(), family, recipes);
-        restoreChores(document.chores(), family, members);
+        Map<String, ChoreTemplate> chores = restoreChores(document.chores(), family, members);
+        restoreActivity(document.activity(), family, members, chores);
         restoreEvents(document.events(), family, members);
         int themePacks = themePackService.replaceAll(document.themePacks(), family);
 
@@ -128,6 +135,10 @@ public class BackupRestoreService {
         if (document.version() == null || document.version() != BackupDocument.CURRENT_VERSION) {
             throw new BadRequestException(
                     "This file is not a Family Hub backup (version " + document.version() + ").");
+        }
+        if (!document.members().isEmpty()
+                && document.members().stream().allMatch(m -> m.role() == MemberRole.KID)) {
+            throw new BadRequestException("This backup has no parent. A family needs at least one parent.");
         }
         Set<String> memberRefs = new HashSet<>();
         document.members().forEach(m -> memberRefs.add(m.ref()));
@@ -205,6 +216,15 @@ public class BackupRestoreService {
             member.setAvatarUrl(backup.avatarUrl());
             member.setEmail(backup.email());
             member.setBirthday(backup.birthday());
+            if (backup.role() != null) {
+                member.setRole(backup.role());
+            }
+            if (member.getRole() == MemberRole.KID) {
+                // A kid has no PIN. Parents keep theirs: backups never carry PINs.
+                member.setPinHash(null);
+                member.setPinFailedAttempts(0);
+                member.setPinLockedUntil(null);
+            }
             member = familyMemberRepository.save(member);
             existingByName.put(normalize(member.getName()), member);
             idsByRef.put(backup.ref(), member.getId());
@@ -216,6 +236,7 @@ public class BackupRestoreService {
     private void wipe(Family family, Set<UUID> membersToKeep) {
         mealSlotRepository.deleteAll(mealSlotRepository.findByFamilyOrderByWeekStartDateAscDayIndexAscMealTypeAsc(family));
         recipeRepository.deleteAll(recipeRepository.findByFamilyOrderByCreatedAtAsc(family));
+        choreActivityRepository.deleteByFamily(family);
         chorePeriodCompletionRepository.deleteByFamily(family);
         choreTemplateRepository.deleteByFamily(family);
         calendarEventRepository.deleteNativeByFamily(family);
@@ -342,7 +363,9 @@ public class BackupRestoreService {
         }
     }
 
-    private void restoreChores(List<ChoreBackup> backups, Family family, Map<String, FamilyMember> members) {
+    private Map<String, ChoreTemplate> restoreChores(List<ChoreBackup> backups, Family family,
+                                                     Map<String, FamilyMember> members) {
+        Map<String, ChoreTemplate> byRef = new HashMap<>();
         for (ChoreBackup backup : backups) {
             ChoreTemplate template = new ChoreTemplate();
             template.setFamily(family);
@@ -354,7 +377,9 @@ public class BackupRestoreService {
                     : EnumSet.copyOf(backup.daysOfWeek()));
             template.setActiveFrom(backup.activeFrom());
             template.setArchivedAt(backup.archivedAt());
+            template.setPoints(backup.points());
             ChoreTemplate saved = choreTemplateRepository.save(template);
+            byRef.put(backup.ref(), saved);
             for (CompletionBackup completionBackup : backup.completions()) {
                 ChorePeriodCompletion completion = new ChorePeriodCompletion();
                 completion.setChoreTemplate(saved);
@@ -363,8 +388,36 @@ public class BackupRestoreService {
                 completion.setCompletedAt(completionBackup.completedAt());
                 completion.setCompletedByMember(
                         completionBackup.completedBy() == null ? null : members.get(completionBackup.completedBy()));
+                completion.setStatus(completionBackup.status() == null
+                        ? ChoreCompletionStatus.APPROVED : completionBackup.status());
+                completion.setPointsAwarded(completionBackup.pointsAwarded());
                 chorePeriodCompletionRepository.save(completion);
             }
+        }
+        return byRef;
+    }
+
+    /** Replays the chore log; a ref that matches nothing in the file becomes a name only. */
+    private void restoreActivity(List<ActivityBackup> backups, Family family, Map<String, FamilyMember> members,
+                                 Map<String, ChoreTemplate> chores) {
+        if (backups == null) {
+            return;
+        }
+        for (ActivityBackup backup : backups) {
+            ChoreActivity activity = new ChoreActivity();
+            activity.setFamily(family);
+            activity.setChoreTemplate(backup.chore() == null ? null : chores.get(backup.chore()));
+            activity.setChoreTitle(backup.choreTitle());
+            activity.setMember(backup.member() == null ? null : members.get(backup.member()));
+            activity.setMemberName(backup.memberName());
+            activity.setKind(backup.kind());
+            activity.setPoints(backup.points());
+            activity.setActor(backup.actor() == null ? null : members.get(backup.actor()));
+            activity.setActorName(backup.actorName());
+            activity.setReason(backup.reason());
+            activity.setPeriodStartDate(backup.periodStartDate());
+            activity.setOccurredAt(backup.occurredAt());
+            choreActivityRepository.save(activity);
         }
     }
 

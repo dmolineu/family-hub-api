@@ -1,12 +1,15 @@
 package com.familyhub.demo.dto;
 
+import com.familyhub.demo.model.ChoreActivityKind;
 import com.familyhub.demo.model.ChoreCadence;
+import com.familyhub.demo.model.ChoreCompletionStatus;
 import com.familyhub.demo.model.FamilyColor;
 import com.familyhub.demo.model.ListCategoryDisplayMode;
 import com.familyhub.demo.model.ListKind;
 import com.familyhub.demo.model.MealEntrySourceType;
 import com.familyhub.demo.model.MealSlotRole;
 import com.familyhub.demo.model.MealType;
+import com.familyhub.demo.model.MemberRole;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -19,8 +22,8 @@ import java.time.LocalTime;
 import java.util.List;
 
 /**
- * Everything a family owns, as one file. Credentials and Google tokens are never part
- * of it; Google-synced calendar events are left out because they re-sync. The {@code ref}
+ * Everything a family owns, as one file. Credentials, parents' PINs and Google tokens
+ * are never part of it; Google-synced calendar events are left out because they re-sync. The {@code ref}
  * fields are the ids at export time and only serve to link rows inside the document; a
  * restore assigns new ids.
  */
@@ -35,9 +38,36 @@ public record BackupDocument(
         @NotNull @Valid List<MealSlotBackup> meals,
         @NotNull @Valid List<EventBackup> events,
         /** Absent in backups taken before theme packs existed; treated as empty. */
-        @Valid List<ThemePackBackup> themePacks
+        @Valid List<ThemePackBackup> themePacks,
+        /** The chore log; absent in backups taken before approvals existed. */
+        @Valid List<ActivityBackup> activity
 ) {
     public static final int CURRENT_VERSION = 1;
+
+    /** The shape before the chore log existed. */
+    public BackupDocument(Integer version, Instant exportedAt, FamilyBackup family, List<MemberBackup> members,
+                          List<ChoreBackup> chores, ListsBackup lists, List<RecipeBackup> recipes,
+                          List<MealSlotBackup> meals, List<EventBackup> events, List<ThemePackBackup> themePacks) {
+        this(version, exportedAt, family, members, chores, lists, recipes, meals, events, themePacks, null);
+    }
+
+    /**
+     * One line of the chore log. Refs point at members and chores in this file, or are
+     * null when the member or chore had been deleted; the names keep the line readable.
+     */
+    public record ActivityBackup(
+            String chore,
+            @NotBlank String choreTitle,
+            String member,
+            @NotBlank String memberName,
+            @NotNull ChoreActivityKind kind,
+            int points,
+            String actor,
+            String actorName,
+            String reason,
+            LocalDate periodStartDate,
+            @NotNull Instant occurredAt
+    ) {}
 
     /** A look the family imported, as the exact document; validated again on restore. */
     public record ThemePackBackup(
@@ -61,8 +91,16 @@ public record BackupDocument(
             String avatarUrl,
             String email,
             /** Absent in backups taken before birthdays existed. */
-            MemberBirthday birthday
-    ) {}
+            MemberBirthday birthday,
+            /** Absent in backups taken before roles existed: existing members keep theirs. */
+            MemberRole role
+    ) {
+        /** The shape before roles existed. */
+        public MemberBackup(String ref, String name, FamilyColor color, String avatarUrl, String email,
+                            MemberBirthday birthday) {
+            this(ref, name, color, avatarUrl, email, birthday, null);
+        }
+    }
 
     public record ChoreBackup(
             @NotBlank String ref,
@@ -73,15 +111,33 @@ public record BackupDocument(
             String assignedTo,
             @NotNull LocalDate activeFrom,
             LocalDateTime archivedAt,
-            @NotNull @Valid List<CompletionBackup> completions
-    ) {}
+            @NotNull @Valid List<CompletionBackup> completions,
+            /** Absent in backups taken before points existed. */
+            Integer points
+    ) {
+        /** The shape before points existed. */
+        public ChoreBackup(String ref, String title, ChoreCadence cadence, List<DayOfWeek> daysOfWeek,
+                           String assignedTo, LocalDate activeFrom, LocalDateTime archivedAt,
+                           List<CompletionBackup> completions) {
+            this(ref, title, cadence, daysOfWeek, assignedTo, activeFrom, archivedAt, completions, null);
+        }
+    }
 
     public record CompletionBackup(
             @NotNull LocalDate periodStartDate,
             @NotNull LocalDate periodEndDate,
             @NotNull LocalDateTime completedAt,
-            String completedBy
-    ) {}
+            String completedBy,
+            /** Absent in backups taken before approvals existed: treated as approved. */
+            ChoreCompletionStatus status,
+            Integer pointsAwarded
+    ) {
+        /** The shape before approvals existed. */
+        public CompletionBackup(LocalDate periodStartDate, LocalDate periodEndDate, LocalDateTime completedAt,
+                                String completedBy) {
+            this(periodStartDate, periodEndDate, completedAt, completedBy, null, null);
+        }
+    }
 
     public record ListsBackup(
             Boolean showCompletedByDefault,

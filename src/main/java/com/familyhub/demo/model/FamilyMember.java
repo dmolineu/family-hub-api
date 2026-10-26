@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -45,6 +46,26 @@ public class FamilyMember {
 
     @Column(name = "birth_year")
     private Integer birthYear;
+
+    /** Parents approve chores; existing members are parents until a parent says otherwise. */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    private MemberRole role = MemberRole.PARENT;
+
+    /** BCrypt hash of a parent's own PIN; never leaves the server or goes into a backup. */
+    @Column(name = "pin_hash", length = 100)
+    private String pinHash;
+
+    @Column(name = "pin_failed_attempts", nullable = false)
+    private int pinFailedAttempts;
+
+    @Column(name = "pin_locked_until")
+    private Instant pinLockedUntil;
+
+    /** True for a parent who has set a PIN. */
+    public boolean hasPin() {
+        return pinHash != null;
+    }
 
     /** The birthday as one value, or null when none is set. */
     public com.familyhub.demo.dto.MemberBirthday getBirthday() {

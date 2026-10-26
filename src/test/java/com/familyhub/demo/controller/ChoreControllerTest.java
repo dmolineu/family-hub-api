@@ -60,6 +60,9 @@ class ChoreControllerTest {
     @MockitoBean
     ChoreService choreService;
 
+    @MockitoBean
+    com.familyhub.demo.service.ChoreApprovalService choreApprovalService;
+
     @Test
     @WithMockFamily
     void getBoard_returnsTodayWeekAndMonth() throws Exception {

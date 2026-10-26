@@ -27,15 +27,6 @@ public class FamilyMemberMapper {
     }
 
     public static FamilyMemberResponse toDto(FamilyMember familyMember) {
-        FamilyMemberResponse response = new FamilyMemberResponse(
-                familyMember.getId(),
-                familyMember.getName(),
-                familyMember.getColor(),
-                familyMember.getEmail(),
-                familyMember.getAvatarUrl(),
-                familyMember.getBirthday()
-        );
-
-        return response;
+        return FamilyMemberResponse.toDto(familyMember);
     }
 }

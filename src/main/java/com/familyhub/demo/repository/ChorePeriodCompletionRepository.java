@@ -3,6 +3,7 @@ package com.familyhub.demo.repository;
 import com.familyhub.demo.model.Family;
 import org.springframework.data.jpa.repository.Modifying;
 import com.familyhub.demo.model.ChorePeriodCompletion;
+import com.familyhub.demo.model.ChoreCompletionStatus;
 import com.familyhub.demo.model.ChoreTemplate;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -35,6 +36,19 @@ public interface ChorePeriodCompletionRepository extends JpaRepository<ChorePeri
 
     @Query("select c from ChorePeriodCompletion c join fetch c.choreTemplate t where t.family = :family")
     List<ChorePeriodCompletion> findByFamily(@Param("family") Family family);
+
+    /** A family's completions in one status, oldest first (the approvals queue). */
+    @Query("select c from ChorePeriodCompletion c join fetch c.choreTemplate t "
+            + "where t.family = :family and c.status = :status order by c.completedAt, c.id")
+    List<ChorePeriodCompletion> findByFamilyAndStatus(
+            @Param("family") Family family,
+            @Param("status") ChoreCompletionStatus status
+    );
+
+    /** One completion, only if it belongs to the family. */
+    @Query("select c from ChorePeriodCompletion c join fetch c.choreTemplate t "
+            + "where c.id = :id and t.family = :family")
+    Optional<ChorePeriodCompletion> findByIdAndFamily(@Param("id") UUID id, @Param("family") Family family);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("delete from ChorePeriodCompletion c where c.choreTemplate in (select t from ChoreTemplate t where t.family = :family)")

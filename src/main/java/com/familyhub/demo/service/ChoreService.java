@@ -12,12 +12,15 @@ import com.familyhub.demo.dto.UpdateChoreTemplateRequest;
 import com.familyhub.demo.dto.UpdateCurrentPeriodCompletionRequest;
 import com.familyhub.demo.exception.BadRequestException;
 import com.familyhub.demo.exception.ResourceNotFoundException;
+import com.familyhub.demo.model.ChoreActivityKind;
 import com.familyhub.demo.model.ChoreCadence;
+import com.familyhub.demo.model.ChoreCompletionStatus;
 import com.familyhub.demo.model.ChorePeriodCompletion;
 import com.familyhub.demo.model.ChoreScope;
 import com.familyhub.demo.model.ChoreTemplate;
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.model.FamilyMember;
+import com.familyhub.demo.model.MemberRole;
 import com.familyhub.demo.repository.ChorePeriodCompletionRepository;
 import com.familyhub.demo.repository.ChoreTemplateRepository;
 import com.familyhub.demo.repository.FamilyMemberRepository;
@@ -54,11 +57,15 @@ public class ChoreService {
     private static final String STALE_PERIOD_MESSAGE = "Chore period is stale. Refresh and try again.";
     private static final String WHO_COMPLETED_REQUIRED_MESSAGE = "Choose who completed this chore.";
     private static final String DAYS_REQUIRE_WEEKLY_MESSAGE = "Days of the week apply to weekly chores only.";
+    private static final String PIN_REQUIRED_TO_UNTICK_MESSAGE =
+            "A parent's PIN is needed to untick a chore that was already approved.";
 
     private final ChoreTemplateRepository choreTemplateRepository;
     private final ChorePeriodCompletionRepository chorePeriodCompletionRepository;
     private final ChorePeriodCompletionWriter chorePeriodCompletionWriter;
     private final FamilyMemberRepository familyMemberRepository;
+    private final ChoreActivityLog choreActivityLog;
+    private final ParentPinService parentPinService;
     private final Clock clock;
 
     public ChoreBoardResponse getBoard(Family family) {
@@ -128,6 +135,7 @@ public class ChoreService {
         template.setCadence(request.cadence());
         template.setDaysOfWeek(copyDays(request.daysOfWeek()));
         template.setActiveFrom(request.activeFrom());
+        template.setPoints(request.points());
         return template;
     }
 
@@ -168,6 +176,9 @@ public class ChoreService {
         if (request.archived() != null) {
             template.setArchivedAt(Boolean.TRUE.equals(request.archived()) ? LocalDateTime.now(clock) : null);
         }
+        if (request.points() != null) {
+            template.setPoints(request.points());
+        }
 
         return toTemplateResponse(choreTemplateRepository.save(template));
     }
@@ -182,7 +193,11 @@ public class ChoreService {
         ChoreTemplate template = requireActiveTemplate(family, templateId, today);
         ResolvedPeriod period = resolveCurrentPeriod(template, today);
         assertFreshPeriod(request, period);
-        UUID completedByMemberId = resolveCompletedBy(template, request.completedByMemberId(), family);
+        FamilyMember credited = resolveCompletedBy(template, request.completedByMemberId(), family);
+        // A kid's chore waits for a parent; anyone else's counts at once.
+        boolean needsApproval = credited.getRole() == MemberRole.KID;
+        ChoreCompletionStatus status = needsApproval ? ChoreCompletionStatus.PENDING : ChoreCompletionStatus.APPROVED;
+        Integer pointsAwarded = needsApproval ? null : pointsOf(template);
 
         ChorePeriodCompletion existingCompletion = chorePeriodCompletionRepository
                 .findByChoreTemplateAndPeriodStartDateAndPeriodEndDate(
@@ -202,8 +217,12 @@ public class ChoreService {
                     period.periodStartDate(),
                     period.periodEndDate(),
                     LocalDateTime.now(clock),
-                    completedByMemberId
+                    credited.getId(),
+                    status,
+                    pointsAwarded
             );
+            choreActivityLog.record(family, template, credited, ChoreActivityKind.COMPLETED,
+                    pointsAwarded == null ? 0 : pointsAwarded, null, null, period.periodStartDate());
             return toCurrentPeriodStateResponse(template, period, saved);
         } catch (DataIntegrityViolationException ex) {
             ChorePeriodCompletion concurrentCompletion = chorePeriodCompletionRepository
@@ -234,7 +253,7 @@ public class ChoreService {
                         period.periodStartDate(),
                         period.periodEndDate()
                 )
-                .ifPresent(chorePeriodCompletionRepository::delete);
+                .ifPresent(completion -> untick(family, template, completion, request));
 
         return new ChoreCurrentPeriodStateResponse(
                 period.scope(),
@@ -242,6 +261,38 @@ public class ChoreService {
                 period.periodEndDate(),
                 toBoardItem(template, null)
         );
+    }
+
+    /**
+     * Removes a completion and logs it. Taking back a kid's approved points needs a
+     * parent's PIN, so a kid cannot undo a parent's decision; anything else unticks freely.
+     * A completion from before approvals existed (approved, no points recorded) granted
+     * nothing, so it unticks freely too.
+     */
+    private void untick(Family family, ChoreTemplate template, ChorePeriodCompletion completion,
+                        UpdateCurrentPeriodCompletionRequest request) {
+        FamilyMember credited = completion.getCompletedByMember();
+        boolean pointsGranted = completion.getStatus() == ChoreCompletionStatus.APPROVED
+                && completion.getPointsAwarded() != null;
+        FamilyMember approver = null;
+        if (pointsGranted && credited != null && credited.getRole() == MemberRole.KID) {
+            if (request.approverMemberId() == null || request.pin() == null || request.pin().isBlank()) {
+                throw new AccessDeniedException(PIN_REQUIRED_TO_UNTICK_MESSAGE);
+            }
+            approver = parentPinService.verify(family, request.approverMemberId(), request.pin());
+        }
+        chorePeriodCompletionRepository.delete(completion);
+        if (pointsGranted) {
+            choreActivityLog.record(family, template, credited, ChoreActivityKind.REVERSED,
+                    -completion.getPointsAwarded(), approver, null, completion.getPeriodStartDate());
+        } else {
+            choreActivityLog.record(family, template, credited, ChoreActivityKind.UNCOMPLETED,
+                    0, null, null, completion.getPeriodStartDate());
+        }
+    }
+
+    private static int pointsOf(ChoreTemplate template) {
+        return template.getPoints() == null ? 0 : template.getPoints();
     }
 
     private ChoreScopeBoardResponse buildScopeBoard(
@@ -410,14 +461,14 @@ public class ChoreService {
      * The member credited with a completion: whoever the caller names (checked against the
      * family), else the assignee. An unassigned chore must name someone.
      */
-    private UUID resolveCompletedBy(ChoreTemplate template, UUID requestedMemberId, Family family) {
+    private FamilyMember resolveCompletedBy(ChoreTemplate template, UUID requestedMemberId, Family family) {
         if (requestedMemberId != null) {
-            return requireAssignedMember(family, requestedMemberId).getId();
+            return requireAssignedMember(family, requestedMemberId);
         }
         if (template.getAssignedToMember() == null) {
             throw new BadRequestException(WHO_COMPLETED_REQUIRED_MESSAGE);
         }
-        return template.getAssignedToMember().getId();
+        return template.getAssignedToMember();
     }
 
     private FamilyMember requireAssignedMember(Family family, UUID memberId) {
@@ -486,7 +537,9 @@ public class ChoreService {
                 completion != null ? completion.getCompletedAt() : null,
                 completion != null && completion.getCompletedByMember() != null
                         ? completion.getCompletedByMember().getId()
-                        : null
+                        : null,
+                completion != null ? completion.getStatus() : null,
+                template.getPoints()
         );
     }
 
@@ -508,7 +561,8 @@ public class ChoreService {
                 template.getActiveFrom(),
                 template.getArchivedAt() != null,
                 template.getCreatedAt(),
-                template.getUpdatedAt()
+                template.getUpdatedAt(),
+                template.getPoints()
         );
     }
 

@@ -1,13 +1,20 @@
 package com.familyhub.demo.controller;
 
 import com.familyhub.demo.dto.ApiResponse;
+import com.familyhub.demo.dto.ChoreActivityRequest;
+import com.familyhub.demo.dto.ChoreActivityResponse;
+import com.familyhub.demo.dto.ChoreApprovalRequest;
+import com.familyhub.demo.dto.ChoreApprovalResultResponse;
 import com.familyhub.demo.dto.ChoreBoardResponse;
+import com.familyhub.demo.dto.ChorePointsResponse;
 import com.familyhub.demo.dto.ChoreCurrentPeriodStateResponse;
 import com.familyhub.demo.dto.ChoreTemplateResponse;
 import com.familyhub.demo.dto.CreateChoreTemplateRequest;
 import com.familyhub.demo.dto.UpdateChoreTemplateRequest;
+import com.familyhub.demo.dto.PendingChoreApprovalResponse;
 import com.familyhub.demo.dto.UpdateCurrentPeriodCompletionRequest;
 import com.familyhub.demo.model.Family;
+import com.familyhub.demo.service.ChoreApprovalService;
 import com.familyhub.demo.service.ChoreService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +39,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ChoreController {
     private final ChoreService choreService;
+    private final ChoreApprovalService choreApprovalService;
 
     @GetMapping("/board")
     public ResponseEntity<ApiResponse<ChoreBoardResponse>> getBoard(@AuthenticationPrincipal Family family) {
@@ -85,5 +93,37 @@ public class ChoreController {
                 choreService.uncompleteCurrentPeriod(id, request, family),
                 "Chore completion updated successfully"
         ));
+    }
+
+    /** Kids' chores waiting for a parent. */
+    @GetMapping("/approvals")
+    public ResponseEntity<ApiResponse<List<PendingChoreApprovalResponse>>> listPendingApprovals(
+            @AuthenticationPrincipal Family family
+    ) {
+        return ResponseEntity.ok(new ApiResponse<>(choreApprovalService.listPending(family), ""));
+    }
+
+    /** A parent approves and rejects waiting chores with their own PIN. */
+    @PostMapping("/approvals")
+    public ResponseEntity<ApiResponse<ChoreApprovalResultResponse>> decideApprovals(
+            @Valid @RequestBody ChoreApprovalRequest request,
+            @AuthenticationPrincipal Family family
+    ) {
+        return ResponseEntity.ok(new ApiResponse<>(choreApprovalService.decide(family, request), "Chores decided"));
+    }
+
+    /** Every member's points balance. */
+    @GetMapping("/points")
+    public ResponseEntity<ApiResponse<List<ChorePointsResponse>>> getPoints(@AuthenticationPrincipal Family family) {
+        return ResponseEntity.ok(new ApiResponse<>(choreApprovalService.points(family), ""));
+    }
+
+    /** The chore log; a POST so the parent's PIN stays out of URLs and access logs. */
+    @PostMapping("/activity")
+    public ResponseEntity<ApiResponse<List<ChoreActivityResponse>>> getActivity(
+            @Valid @RequestBody ChoreActivityRequest request,
+            @AuthenticationPrincipal Family family
+    ) {
+        return ResponseEntity.ok(new ApiResponse<>(choreApprovalService.activity(family, request), ""));
     }
 }

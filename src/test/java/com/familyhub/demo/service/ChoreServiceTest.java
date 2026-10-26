@@ -9,6 +9,7 @@ import com.familyhub.demo.dto.UpdateChoreTemplateRequest;
 import com.familyhub.demo.dto.UpdateCurrentPeriodCompletionRequest;
 import com.familyhub.demo.exception.BadRequestException;
 import com.familyhub.demo.model.ChoreCadence;
+import com.familyhub.demo.model.ChoreCompletionStatus;
 import com.familyhub.demo.model.ChorePeriodCompletion;
 import com.familyhub.demo.model.ChoreScope;
 import com.familyhub.demo.model.ChoreTemplate;
@@ -62,6 +63,12 @@ class ChoreServiceTest {
     @Mock
     private FamilyMemberRepository familyMemberRepository;
 
+    @Mock
+    private ChoreActivityLog choreActivityLog;
+
+    @Mock
+    private ParentPinService parentPinService;
+
     private ChoreService choreService;
     private Family family;
     private FamilyMember member;
@@ -74,6 +81,8 @@ class ChoreServiceTest {
                 chorePeriodCompletionRepository,
                 chorePeriodCompletionWriter,
                 familyMemberRepository,
+                choreActivityLog,
+                parentPinService,
                 clock
         );
         family = createFamily();
@@ -344,7 +353,7 @@ class ChoreServiceTest {
                 LocalDate.of(2026, 5, 17),
                 LocalDate.of(2026, 5, 17),
                 LocalDateTime.of(2026, 5, 17, 16, 0),
-                MEMBER_ID
+                MEMBER_ID, ChoreCompletionStatus.APPROVED, 0
         )).thenReturn(savedCompletion);
 
         ChoreCurrentPeriodStateResponse response = choreService.completeCurrentPeriod(
@@ -389,7 +398,7 @@ class ChoreServiceTest {
         saved.setCompletedAt(LocalDateTime.of(2026, 5, 17, 16, 0));
         saved.setCompletedByMember(member);
         when(chorePeriodCompletionWriter.createCompletion(
-                anyone.getId(), LocalDate.of(2026, 5, 17), LocalDate.of(2026, 5, 17), LocalDateTime.of(2026, 5, 17, 16, 0), MEMBER_ID
+                anyone.getId(), LocalDate.of(2026, 5, 17), LocalDate.of(2026, 5, 17), LocalDateTime.of(2026, 5, 17, 16, 0), MEMBER_ID, ChoreCompletionStatus.APPROVED, 0
         )).thenReturn(saved);
 
         ChoreCurrentPeriodStateResponse response = choreService.completeCurrentPeriod(
@@ -482,7 +491,7 @@ class ChoreServiceTest {
         saved.setCompletedAt(LocalDateTime.of(2026, 5, 17, 16, 0));
         saved.setCompletedByMember(member);
         when(chorePeriodCompletionWriter.createCompletion(
-                sundays.getId(), LocalDate.of(2026, 5, 17), LocalDate.of(2026, 5, 17), LocalDateTime.of(2026, 5, 17, 16, 0), MEMBER_ID
+                sundays.getId(), LocalDate.of(2026, 5, 17), LocalDate.of(2026, 5, 17), LocalDateTime.of(2026, 5, 17, 16, 0), MEMBER_ID, ChoreCompletionStatus.APPROVED, 0
         )).thenReturn(saved);
 
         ChoreCurrentPeriodStateResponse response = choreService.completeCurrentPeriod(
@@ -598,7 +607,7 @@ class ChoreServiceTest {
                 LocalDate.of(2026, 5, 17),
                 LocalDate.of(2026, 5, 17),
                 LocalDateTime.of(2026, 5, 17, 16, 0),
-                MEMBER_ID
+                MEMBER_ID, ChoreCompletionStatus.APPROVED, 0
         ))
                 .thenThrow(new DataIntegrityViolationException("duplicate key"));
 

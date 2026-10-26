@@ -2,6 +2,7 @@ package com.familyhub.demo.dto;
 
 import com.familyhub.demo.model.FamilyColor;
 import com.familyhub.demo.model.FamilyMember;
+import com.familyhub.demo.model.MemberRole;
 
 import java.util.UUID;
 
@@ -11,8 +12,16 @@ public record FamilyMemberResponse(
         FamilyColor color,
         String email,
         String avatarUrl,
-        MemberBirthday birthday
+        MemberBirthday birthday,
+        MemberRole role,
+        boolean hasPin
 ) {
+
+    /** The shape before roles and PINs existed: a parent without a PIN. */
+    public FamilyMemberResponse(UUID id, String name, FamilyColor color, String email, String avatarUrl,
+                                MemberBirthday birthday) {
+        this(id, name, color, email, avatarUrl, birthday, MemberRole.PARENT, false);
+    }
 
     /** The shape before birthdays existed. */
     public FamilyMemberResponse(UUID id, String name, FamilyColor color, String email, String avatarUrl) {
@@ -26,7 +35,9 @@ public record FamilyMemberResponse(
                 familyMember.getColor(),
                 familyMember.getEmail(),
                 familyMember.getAvatarUrl(),
-                familyMember.getBirthday()
+                familyMember.getBirthday(),
+                familyMember.getRole(),
+                familyMember.hasPin()
         );
     }
 }

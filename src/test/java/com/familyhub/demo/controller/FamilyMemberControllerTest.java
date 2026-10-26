@@ -47,6 +47,9 @@ class FamilyMemberControllerTest {
     @MockitoBean
     FamilyMemberService familyMemberService;
 
+    @MockitoBean
+    com.familyhub.demo.service.ParentPinService parentPinService;
+
     private FamilyMemberResponse sampleMemberResponse() {
         return new FamilyMemberResponse(MEMBER_ID, "Mom", FamilyColor.CORAL, "mom@test.com", null);
     }

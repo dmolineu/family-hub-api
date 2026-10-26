@@ -2,6 +2,11 @@ package com.familyhub.demo.integration;
 
 import com.familyhub.demo.config.TestcontainersConfig;
 import com.jayway.jsonpath.JsonPath;
+import com.familyhub.demo.model.ChoreCompletionStatus;
+import com.familyhub.demo.model.ChorePeriodCompletion;
+import com.familyhub.demo.repository.ChorePeriodCompletionRepository;
+import com.familyhub.demo.repository.ChoreTemplateRepository;
+import com.familyhub.demo.repository.FamilyMemberRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -11,6 +16,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -38,6 +44,15 @@ class ChoreApprovalIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private ChoreTemplateRepository choreTemplateRepository;
+
+    @Autowired
+    private ChorePeriodCompletionRepository chorePeriodCompletionRepository;
+
+    @Autowired
+    private FamilyMemberRepository familyMemberRepository;
 
     private record Family(String token, String momId, String dadId, String mayaId) {}
 
@@ -101,6 +116,10 @@ class ChoreApprovalIntegrationTest {
         return JsonPath.read(board, "$.data.today.periodStartDate");
     }
 
+    private static String unlock(String parentId, String pin) {
+        return "{\"approverMemberId\": \"" + parentId + "\", \"pin\": \"" + pin + "\"}";
+    }
+
     private String periodBody(String today, String extra) {
         return "{\"scope\": \"TODAY\", \"periodStartDate\": \"" + today + "\"" + extra + "}";
     }
@@ -146,9 +165,16 @@ class ChoreApprovalIntegrationTest {
                 .andExpect(jsonPath("$.data.item.points").value(5));
         assertThat(points(f, f.mayaId())).isZero();
 
-        String pending = mockMvc.perform(get("/api/chores/approvals").header("Authorization", auth(f)))
+        mockMvc.perform(get("/api/chores/approvals/count").header("Authorization", auth(f)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.count").value(1));
+        String pending = mockMvc.perform(post("/api/chores/approvals/pending")
+                        .header("Authorization", auth(f))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(unlock(f.momId(), "2468")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data", hasSize(1)))
+                .andExpect(jsonPath("$.data[0].completedAt").isNotEmpty())
                 .andExpect(jsonPath("$.data[0].choreTitle").value("Feed the cat"))
                 .andExpect(jsonPath("$.data[0].memberName").value("Maya"))
                 .andExpect(jsonPath("$.data[0].points").value(5))
@@ -173,8 +199,8 @@ class ChoreApprovalIntegrationTest {
                 .andExpect(jsonPath("$.data.approved").value(1))
                 .andExpect(jsonPath("$.data.rejected").value(0));
         assertThat(points(f, f.mayaId())).isEqualTo(5);
-        mockMvc.perform(get("/api/chores/approvals").header("Authorization", auth(f)))
-                .andExpect(jsonPath("$.data", hasSize(0)));
+        mockMvc.perform(get("/api/chores/approvals/count").header("Authorization", auth(f)))
+                .andExpect(jsonPath("$.data.count").value(0));
 
         // The log needs a parent's PIN and names who did what, newest first.
         mockMvc.perform(post("/api/chores/activity")
@@ -244,7 +270,10 @@ class ChoreApprovalIntegrationTest {
                         .content(periodBody(today, "")))
                 .andExpect(status().isOk());
         String completionId = JsonPath.read(
-                mockMvc.perform(get("/api/chores/approvals").header("Authorization", auth(f)))
+                mockMvc.perform(post("/api/chores/approvals/pending")
+                                .header("Authorization", auth(f))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(unlock(f.dadId(), "135790")))
                         .andReturn().getResponse().getContentAsString(),
                 "$.data[0].completionId");
 
@@ -311,8 +340,8 @@ class ChoreApprovalIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.item.status").value("APPROVED"));
         assertThat(points(f, f.dadId())).isEqualTo(3);
-        mockMvc.perform(get("/api/chores/approvals").header("Authorization", auth(f)))
-                .andExpect(jsonPath("$.data", hasSize(0)));
+        mockMvc.perform(get("/api/chores/approvals/count").header("Authorization", auth(f)))
+                .andExpect(jsonPath("$.data.count").value(0));
     }
 
     @Test
@@ -326,5 +355,76 @@ class ChoreApprovalIntegrationTest {
                         .content("{\"role\": \"KID\", \"password\": \"" + PASSWORD + "\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(containsString("at least one parent")));
+    }
+
+    @Test
+    void seeingWhatWaitsNeedsAParentsPinAndEachDayWaitsSeparately() throws Exception {
+        Family f = register();
+        makeKid(f, f.mayaId());
+        setPin(f, f.momId(), "2468");
+        String choreId = createChore(f, "Feed the cat", f.mayaId(), 5);
+        String today = today(f);
+        mockMvc.perform(put("/api/chores/templates/{id}/current-period-completion", choreId)
+                        .header("Authorization", auth(f))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(periodBody(today, "")))
+                .andExpect(status().isOk());
+
+        // Yesterday's tick, never approved, still waits next to today's.
+        LocalDate yesterday = LocalDate.parse(today).minusDays(1);
+        ChorePeriodCompletion earlier = new ChorePeriodCompletion();
+        earlier.setChoreTemplate(choreTemplateRepository.findById(UUID.fromString(choreId)).orElseThrow());
+        earlier.setPeriodStartDate(yesterday);
+        earlier.setPeriodEndDate(yesterday);
+        earlier.setCompletedAt(yesterday.atTime(17, 30));
+        earlier.setCompletedByMember(familyMemberRepository.findById(UUID.fromString(f.mayaId())).orElseThrow());
+        earlier.setStatus(ChoreCompletionStatus.PENDING);
+        chorePeriodCompletionRepository.save(earlier);
+
+        // The count needs no PIN (it drives the "N to approve" button)...
+        mockMvc.perform(get("/api/chores/approvals/count").header("Authorization", auth(f)))
+                .andExpect(jsonPath("$.data.count").value(2));
+        // ...but what waits, and for whom, needs a parent's PIN.
+        mockMvc.perform(post("/api/chores/approvals/pending")
+                        .header("Authorization", auth(f))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(unlock(f.momId(), "1111")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/chores/approvals/pending")
+                        .header("Authorization", auth(f))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(unlock(f.mayaId(), "1111")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value(containsString("Only a parent")));
+
+        String pending = mockMvc.perform(post("/api/chores/approvals/pending")
+                        .header("Authorization", auth(f))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(unlock(f.momId(), "2468")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(2)))
+                .andExpect(jsonPath("$.data[0].choreTitle").value("Feed the cat"))
+                .andExpect(jsonPath("$.data[0].periodStartDate").value(yesterday.toString()))
+                .andExpect(jsonPath("$.data[0].completedAt").value(containsString(yesterday + "T17:30")))
+                .andExpect(jsonPath("$.data[1].choreTitle").value("Feed the cat"))
+                .andExpect(jsonPath("$.data[1].periodStartDate").value(today))
+                .andReturn().getResponse().getContentAsString();
+        List<String> ids = JsonPath.read(pending, "$.data[*].completionId");
+
+        // Kids cannot open the chore log either.
+        mockMvc.perform(post("/api/chores/activity")
+                        .header("Authorization", auth(f))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(unlock(f.mayaId(), "1111")))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/chores/approvals")
+                        .header("Authorization", auth(f))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"approverMemberId\": \"" + f.momId() + "\", \"pin\": \"2468\", \"approve\": [\""
+                                + ids.get(0) + "\", \"" + ids.get(1) + "\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.approved").value(2));
+        assertThat(points(f, f.mayaId())).isEqualTo(10);
     }
 }

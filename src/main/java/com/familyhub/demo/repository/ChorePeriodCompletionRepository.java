@@ -45,6 +45,11 @@ public interface ChorePeriodCompletionRepository extends JpaRepository<ChorePeri
             @Param("status") ChoreCompletionStatus status
     );
 
+    /** How many of a family's completions are in one status. */
+    @Query("select count(c) from ChorePeriodCompletion c where c.choreTemplate.family = :family "
+            + "and c.status = :status")
+    long countByFamilyAndStatus(@Param("family") Family family, @Param("status") ChoreCompletionStatus status);
+
     /** One completion, only if it belongs to the family. */
     @Query("select c from ChorePeriodCompletion c join fetch c.choreTemplate t "
             + "where c.id = :id and t.family = :family")

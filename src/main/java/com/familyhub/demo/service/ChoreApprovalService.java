@@ -5,6 +5,8 @@ import com.familyhub.demo.dto.ChoreActivityResponse;
 import com.familyhub.demo.dto.ChoreApprovalRequest;
 import com.familyhub.demo.dto.ChoreApprovalResultResponse;
 import com.familyhub.demo.dto.ChorePointsResponse;
+import com.familyhub.demo.dto.ParentPinRequest;
+import com.familyhub.demo.dto.PendingApprovalCountResponse;
 import com.familyhub.demo.dto.PendingChoreApprovalResponse;
 import com.familyhub.demo.exception.BadRequestException;
 import com.familyhub.demo.exception.ResourceNotFoundException;
@@ -53,8 +55,25 @@ public class ChoreApprovalService {
     private final ChoreActivityLog choreActivityLog;
     private final ParentPinService parentPinService;
 
-    /** Kids' ticked chores waiting for a parent, oldest first. Needs no PIN to look. */
-    public List<PendingChoreApprovalResponse> listPending(Family family) {
+    /** How many kids' chores wait; no details, so no PIN is needed (it drives a badge). */
+    public PendingApprovalCountResponse countPending(Family family) {
+        return new PendingApprovalCountResponse(
+                chorePeriodCompletionRepository.countByFamilyAndStatus(family, ChoreCompletionStatus.PENDING));
+    }
+
+    /**
+     * Kids' ticked chores waiting for a parent, oldest first, each with when it was
+     * ticked. Seeing them needs a parent's PIN, like deciding them: the approvals
+     * screen opens with one PIN and closes locked.
+     *
+     * @throws AccessDeniedException for a kid, a wrong PIN or a locked PIN (403)
+     */
+    public List<PendingChoreApprovalResponse> listPending(Family family, ParentPinRequest request) {
+        parentPinService.verify(family, request.approverMemberId(), request.pin());
+        return listPending(family);
+    }
+
+    private List<PendingChoreApprovalResponse> listPending(Family family) {
         return chorePeriodCompletionRepository.findByFamilyAndStatus(family, ChoreCompletionStatus.PENDING)
                 .stream()
                 .map(completion -> new PendingChoreApprovalResponse(

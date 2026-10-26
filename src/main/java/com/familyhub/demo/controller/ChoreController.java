@@ -11,6 +11,8 @@ import com.familyhub.demo.dto.ChoreCurrentPeriodStateResponse;
 import com.familyhub.demo.dto.ChoreTemplateResponse;
 import com.familyhub.demo.dto.CreateChoreTemplateRequest;
 import com.familyhub.demo.dto.UpdateChoreTemplateRequest;
+import com.familyhub.demo.dto.ParentPinRequest;
+import com.familyhub.demo.dto.PendingApprovalCountResponse;
 import com.familyhub.demo.dto.PendingChoreApprovalResponse;
 import com.familyhub.demo.dto.UpdateCurrentPeriodCompletionRequest;
 import com.familyhub.demo.model.Family;
@@ -95,12 +97,21 @@ public class ChoreController {
         ));
     }
 
-    /** Kids' chores waiting for a parent. */
-    @GetMapping("/approvals")
-    public ResponseEntity<ApiResponse<List<PendingChoreApprovalResponse>>> listPendingApprovals(
+    /** How many kids' chores wait for a parent (no details; drives the button). */
+    @GetMapping("/approvals/count")
+    public ResponseEntity<ApiResponse<PendingApprovalCountResponse>> countPendingApprovals(
             @AuthenticationPrincipal Family family
     ) {
-        return ResponseEntity.ok(new ApiResponse<>(choreApprovalService.listPending(family), ""));
+        return ResponseEntity.ok(new ApiResponse<>(choreApprovalService.countPending(family), ""));
+    }
+
+    /** The waiting chores themselves, for a parent who has entered their PIN. */
+    @PostMapping("/approvals/pending")
+    public ResponseEntity<ApiResponse<List<PendingChoreApprovalResponse>>> listPendingApprovals(
+            @Valid @RequestBody ParentPinRequest request,
+            @AuthenticationPrincipal Family family
+    ) {
+        return ResponseEntity.ok(new ApiResponse<>(choreApprovalService.listPending(family, request), ""));
     }
 
     /** A parent approves and rejects waiting chores with their own PIN. */

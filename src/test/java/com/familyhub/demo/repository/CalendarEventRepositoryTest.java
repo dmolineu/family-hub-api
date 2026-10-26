@@ -133,4 +133,35 @@ class CalendarEventRepositoryTest {
         assertThat(em.find(FamilyMember.class, memberId)).isNull();
         assertThat(em.find(CalendarEvent.class, eventId)).isNull();
     }
+
+    /**
+     * Events synced from Google keep Google's own limits, which are far longer than
+     * 255 characters (a first sync failed on one, and imported nothing).
+     */
+    @Test
+    void storesGoogleSizedTitlesLocationsAndRules() {
+        Family family = persistFamily("event_family_long");
+        FamilyMember member = persistMember(family, "Alice");
+        String title = "Season schedule: " + "U10 Thunder vs. Lightning, ".repeat(20);
+        String location = "Field 3, North Park Sports Complex, 1234 Long Address Way, "
+                + "behind the library (use the south lot; gate code at the booth) ".repeat(6);
+        String rule = "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;UNTIL=20271231T075959Z;"
+                + "BYHOUR=9;BYMINUTE=0;BYSECOND=0;WKST=SU;INTERVAL=1;".repeat(5);
+
+        CalendarEvent event = new CalendarEvent();
+        event.setFamily(family);
+        event.setMember(member);
+        event.setTitle(title);
+        event.setLocation(location);
+        event.setRecurrenceRule(rule);
+        event.setStartTime(LocalTime.of(9, 0));
+        event.setEndTime(LocalTime.of(10, 0));
+        event.setDate(LocalDate.of(2026, 10, 26));
+        event.setAllDay(false);
+        CalendarEvent saved = em.persistFlushFind(event);
+
+        assertThat(saved.getTitle()).hasSizeGreaterThan(255).isEqualTo(title);
+        assertThat(saved.getLocation()).hasSizeGreaterThan(255).isEqualTo(location);
+        assertThat(saved.getRecurrenceRule()).hasSizeGreaterThan(255).isEqualTo(rule);
+    }
 }

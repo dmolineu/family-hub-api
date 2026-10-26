@@ -19,7 +19,8 @@ public class CalendarEvent {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(nullable = false)
+    // TEXT: Google allows far longer titles, locations and rules than 255 (V26).
+    @Column(nullable = false, columnDefinition = "TEXT")
     private String title;
 
     @Column(nullable = false)
@@ -43,8 +44,10 @@ public class CalendarEvent {
 
     private boolean isAllDay;
 
+    @Column(columnDefinition = "TEXT")
     private String location;
 
+    @Column(columnDefinition = "TEXT")
     private String recurrenceRule;
 
     @ManyToOne(fetch = FetchType.LAZY)

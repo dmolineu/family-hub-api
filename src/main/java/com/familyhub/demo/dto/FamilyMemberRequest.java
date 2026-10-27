@@ -19,7 +19,7 @@ public record FamilyMemberRequest(
     @Size(max = 254, message = "Email is too long")
     String email,
 
-    @Size(max = 254, message = "Avatar url is too long")
+    /** Checked by {@code MemberAvatars}: none, a built-in key, an https link or a picture of up to 64 KB. */
     String avatarUrl,
 
     /** Optional; omitted or null clears it on update. */

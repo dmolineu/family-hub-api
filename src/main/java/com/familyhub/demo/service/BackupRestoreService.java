@@ -86,6 +86,7 @@ public class BackupRestoreService {
     private final MealSlotRepository mealSlotRepository;
     private final CalendarEventRepository calendarEventRepository;
     private final ThemePackService themePackService;
+    private final AvatarPackService avatarPackService;
     private final EntityManager entityManager;
 
     @Transactional
@@ -117,6 +118,7 @@ public class BackupRestoreService {
         restoreActivity(document.activity(), family, members, chores);
         restoreEvents(document.events(), family, members);
         int themePacks = themePackService.replaceAll(document.themePacks(), family);
+        int avatarPacks = avatarPackService.replaceAll(document.avatarPacks(), family);
 
         return new RestoreSummary(
                 document.members().size(),
@@ -125,7 +127,8 @@ public class BackupRestoreService {
                 document.recipes().size(),
                 document.meals().size(),
                 document.events().size(),
-                themePacks
+                themePacks,
+                avatarPacks
         );
     }
 
@@ -213,7 +216,7 @@ public class BackupRestoreService {
                 member.setName(backup.name().trim());
             }
             member.setColor(backup.color());
-            member.setAvatarUrl(backup.avatarUrl());
+            member.setAvatarUrl(MemberAvatars.normalize(backup.avatarUrl()).orElse(null));
             member.setEmail(backup.email());
             member.setBirthday(backup.birthday());
             if (backup.role() != null) {

@@ -42,7 +42,9 @@ public record BackupDocument(
         /** Absent in backups taken before theme packs existed; treated as empty. */
         @Valid List<ThemePackBackup> themePacks,
         /** The chore log; absent in backups taken before approvals existed. */
-        @Valid List<ActivityBackup> activity
+        @Valid List<ActivityBackup> activity,
+        /** Absent in backups taken before avatar packs existed; treated as empty. */
+        @Valid List<AvatarPackBackup> avatarPacks
 ) {
     public static final int CURRENT_VERSION = 1;
 
@@ -51,6 +53,14 @@ public record BackupDocument(
                           List<ChoreBackup> chores, ListsBackup lists, List<RecipeBackup> recipes,
                           List<MealSlotBackup> meals, List<EventBackup> events, List<ThemePackBackup> themePacks) {
         this(version, exportedAt, family, members, chores, lists, recipes, meals, events, themePacks, null);
+    }
+
+    /** The shape before avatar packs existed. */
+    public BackupDocument(Integer version, Instant exportedAt, FamilyBackup family, List<MemberBackup> members,
+                          List<ChoreBackup> chores, ListsBackup lists, List<RecipeBackup> recipes,
+                          List<MealSlotBackup> meals, List<EventBackup> events, List<ThemePackBackup> themePacks,
+                          List<ActivityBackup> activity) {
+        this(version, exportedAt, family, members, chores, lists, recipes, meals, events, themePacks, activity, null);
     }
 
     /**
@@ -75,6 +85,12 @@ public record BackupDocument(
     public record ThemePackBackup(
             @NotBlank String name,
             boolean dark,
+            @NotBlank String document
+    ) {}
+
+    /** A set of characters the family imported, as the exact document; validated again on restore. */
+    public record AvatarPackBackup(
+            @NotBlank String name,
             @NotBlank String document
     ) {}
 

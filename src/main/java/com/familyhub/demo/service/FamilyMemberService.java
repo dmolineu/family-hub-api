@@ -67,7 +67,7 @@ public class FamilyMemberService {
         // Apply updates
         toBeUpdated.setName(update.name());
         toBeUpdated.setColor(update.color());
-        toBeUpdated.setAvatarUrl(update.avatarUrl());
+        toBeUpdated.setAvatarUrl(MemberAvatars.normalize(update.avatarUrl()).orElse(null));
         toBeUpdated.setEmail(update.email());
         if (update.birthday() != null) {
             update.birthday().validate(LocalDate.now());

@@ -4,6 +4,7 @@ import com.familyhub.demo.dto.FamilyMemberRequest;
 import com.familyhub.demo.dto.FamilyMemberResponse;
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.model.FamilyMember;
+import com.familyhub.demo.service.MemberAvatars;
 
 import java.time.LocalDate;
 
@@ -16,7 +17,7 @@ public class FamilyMemberMapper {
         familyMember.setName(request.name());
         familyMember.setEmail(request.email());
         familyMember.setColor(request.color());
-        familyMember.setAvatarUrl(request.avatarUrl());
+        familyMember.setAvatarUrl(MemberAvatars.normalize(request.avatarUrl()).orElse(null));
         if (request.birthday() != null) {
             request.birthday().validate(LocalDate.now());
         }

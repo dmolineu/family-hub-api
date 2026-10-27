@@ -33,6 +33,8 @@ public class FamilyMember {
     @Column(nullable = false)
     private FamilyColor color;
 
+    /** None, {@code builtin:<key>}, an https link or a picture data URL; see {@code MemberAvatars}. */
+    @Column(name = "avatar_url", columnDefinition = "TEXT")
     private String avatarUrl;
 
     @Email

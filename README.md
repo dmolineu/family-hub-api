@@ -12,6 +12,10 @@
 >   `reset-password <username>` (see [Resetting a forgotten password](#resetting-a-forgotten-password));
 >   there is deliberately no forgotten-password screen. `PUT /api/auth/password` changes it
 >   from a signed-in device, and any change signs out every other device.
+> - A member's avatar is a built-in picture (`builtin:<key>`), an uploaded photo or a
+>   character from an avatar pack, stored on the member as a PNG/JPEG/WebP data URL of at
+>   most 64 KB (checked by its bytes). Avatar packs are family data at `/api/avatar-packs`
+>   and travel in backups; their content stays private and is never part of this repo.
 > - CI builds a multi-arch image (amd64 + arm64) and needs no repository secrets; the
 >   release-please and add-to-project workflows are gone because this repo is push-mirrored
 >   from Gitea to GitHub.
@@ -59,6 +63,7 @@ Base path: `/api`. All routes require a `Bearer` JWT except `/api/health`, `/api
 | Lists | `/api/lists` | lists, items, preferences |
 | Meals | `/api/meals` | weekly board + slots |
 | Recipes | `/api/recipes` | CRUD + `import` from URL |
+| Avatar packs | `/api/avatar-packs` | import / list / fetch / delete sets of characters to pick avatars from |
 | Google | `/api/google` | OAuth, calendar selection, sync |
 | Health | `/api/health` | liveness probe |
 

@@ -47,9 +47,15 @@ public class LoginAttemptLimiter {
         }
     }
 
-    /** Counts a wrong password; the fifth within the window locks the username. */
+    /**
+     * Counts a wrong password; the fifth within the window locks the username. Counts
+     * that have run out are dropped here, so usernames tried once and never again (an
+     * invented name, a typo) cannot pile up.
+     */
     public void recordFailure(String username) {
         Instant now = Instant.now(clock);
+        attempts.values().removeIf(a -> a.firstFailure().plus(WINDOW).isBefore(now)
+                && (a.lockedUntil() == null || !now.isBefore(a.lockedUntil())));
         attempts.compute(key(username), (k, current) -> {
             boolean fresh = current == null || current.firstFailure().plus(WINDOW).isBefore(now)
                     || (current.lockedUntil() != null && !now.isBefore(current.lockedUntil()));
@@ -62,6 +68,11 @@ public class LoginAttemptLimiter {
     /** A right password: the count starts again. */
     public void recordSuccess(String username) {
         attempts.remove(key(username));
+    }
+
+    /** How many usernames are being counted (for tests). */
+    int trackedUsernames() {
+        return attempts.size();
     }
 
     private static String key(String username) {

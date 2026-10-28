@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -74,6 +75,26 @@ class LoginAttemptLimiterTest {
     void usernamesMatchWhateverTheirCase() {
         fail("Molineus", 3);
         fail("MOLINEUS ", 2);
+        assertThatThrownBy(() -> limiter.checkAllowed("molineus")).isInstanceOf(TooManyAttemptsException.class);
+    }
+
+    @Test
+    void forgetsUsernamesWhoseMistakesHaveExpiredSoInventedNamesCannotPileUp() {
+        for (int i = 0; i < 500; i++) {
+            limiter.recordFailure("invented-" + i);
+        }
+        now.set(now.get().plus(Duration.ofMinutes(16)));
+
+        limiter.recordFailure("one-more");
+
+        assertThat(limiter.trackedUsernames()).isEqualTo(1);
+    }
+
+    @Test
+    void keepsAUsernameThatIsStillLocked() {
+        fail("molineus", 5);
+        now.set(now.get().plus(Duration.ofMinutes(10)));
+        limiter.recordFailure("someone-else");
         assertThatThrownBy(() -> limiter.checkAllowed("molineus")).isInstanceOf(TooManyAttemptsException.class);
     }
 }

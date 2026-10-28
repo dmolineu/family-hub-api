@@ -75,12 +75,12 @@ public class FolderPhotoService {
     @Transactional(readOnly = true)
     public List<String> sample(Family family, int count) {
         int bounded = Math.max(1, Math.min(MAX_SAMPLE, count));
-        return folderPhotoRepository.sampleIds(family.getId(), bounded).stream().map(UUID::toString).toList();
+        return folderPhotoRepository.sampleIds(family.getId(), bounded);
     }
 
     /**
-     * One picture, at most 1920 px and upright, as a JPEG. Shrunk copies are kept in a
-     * hidden cache inside the family's own photo folder, so each is made once.
+     * One picture, at most 1920 px and upright, as a JPEG; an HEIC one is decoded first.
+     * Shrunk copies are kept in the family's cache folder, so each is made once.
      *
      * @throws ResourceNotFoundException for a picture not in this family's index, or gone from the folder (404)
      */

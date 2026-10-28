@@ -20,10 +20,14 @@ public interface FolderPhotoRepository extends JpaRepository<FolderPhoto, UUID> 
 
     long countByFamily(Family family);
 
-    /** A random handful of a family's folder photos, for one showing of the slideshow. */
-    @Query(value = "select id from folder_photo where family_id = :familyId order by random() limit :count",
-            nativeQuery = true)
-    List<UUID> sampleIds(@Param("familyId") UUID familyId, @Param("count") int count);
+    /**
+     * A random handful of a family's folder photos, for one showing of the slideshow.
+     * The ids come back as text: H2 (the dev profile) returns a native query's UUID
+     * column as raw bytes, and both databases spell a UUID cast to text the same way.
+     */
+    @Query(value = "select cast(id as varchar) from folder_photo where family_id = :familyId "
+            + "order by random() limit :count", nativeQuery = true)
+    List<String> sampleIds(@Param("familyId") UUID familyId, @Param("count") int count);
 
     @Modifying(flushAutomatically = true)
     @Query("delete from FolderPhoto p where p.family = :family")

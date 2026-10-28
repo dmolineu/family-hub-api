@@ -88,6 +88,7 @@ public class BackupRestoreService {
     private final ThemePackService themePackService;
     private final AvatarPackService avatarPackService;
     private final RewardService rewardService;
+    private final SportsTeamService sportsTeamService;
     private final EntityManager entityManager;
 
     @Transactional
@@ -121,6 +122,7 @@ public class BackupRestoreService {
         int themePacks = themePackService.replaceAll(document.themePacks(), family);
         int avatarPacks = avatarPackService.replaceAll(document.avatarPacks(), family);
         int rewards = rewardService.replaceAll(document.rewards(), family);
+        int followedTeams = sportsTeamService.replaceAll(document.followedTeams(), family, members);
 
         return new RestoreSummary(
                 document.members().size(),
@@ -131,7 +133,8 @@ public class BackupRestoreService {
                 document.events().size(),
                 themePacks,
                 avatarPacks,
-                rewards
+                rewards,
+                followedTeams
         );
     }
 

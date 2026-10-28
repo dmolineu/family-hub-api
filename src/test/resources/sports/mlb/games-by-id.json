@@ -1,0 +1,7 @@
+{"dates": [{"date": "2027-04-04", "games": [
+  {"gamePk": 900004, "gameType": "R", "gameDate": "2027-04-04T20:10:00Z", "officialDate": "2027-04-04",
+   "status": {"abstractGameState": "Final", "codedGameState": "F", "detailedState": "Final", "startTimeTBD": false},
+   "teams": {"away": {"team": {"id": 135, "name": "San Diego Padres", "abbreviation": "SD"}, "score": 6},
+             "home": {"team": {"id": 119, "name": "Los Angeles Dodgers", "abbreviation": "LAD"}, "score": 3}},
+   "linescore": {"currentInning": 9, "currentInningOrdinal": "9th", "inningState": "Bottom", "scheduledInnings": 9},
+   "venue": {"id": 22, "name": "Dodger Stadium"}, "doubleHeader": "N", "gameNumber": 1}]}]}

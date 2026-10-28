@@ -30,3 +30,9 @@ google:
 security:
   # Must be a Base64-encoded 32-byte key for AES-256
   token-encryption-key: ${TOKEN_ENCRYPTION_KEY}
+
+# Followed teams' games and live scores (see SportsProperties for every setting).
+sports:
+  mlb-base-url: ${SPORTS_MLB_BASE_URL:https://statsapi.mlb.com}
+  live-poll-interval: ${SPORTS_LIVE_POLL_INTERVAL:PT30S}
+  schedule-cron: ${SPORTS_SCHEDULE_CRON:0 30 4 * * *}

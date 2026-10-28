@@ -1,0 +1,43 @@
+{"dates": [
+  {"date": "2027-04-01", "games": [
+    {"gamePk": 900001, "gameType": "R", "gameDate": "2027-04-02T02:10:00Z", "officialDate": "2027-04-01",
+     "status": {"abstractGameState": "Preview", "codedGameState": "S", "detailedState": "Scheduled", "startTimeTBD": false},
+     "teams": {"away": {"team": {"id": 119, "name": "Los Angeles Dodgers", "abbreviation": "LAD"}},
+               "home": {"team": {"id": 135, "name": "San Diego Padres", "abbreviation": "SD"}}},
+     "venue": {"id": 2680, "name": "Petco Park"},
+     "broadcasts": [{"name": "Padres.TV", "type": "TV", "homeAway": "home"},
+                    {"name": "Padres.TV", "type": "TV", "homeAway": "home"},
+                    {"name": "SportsNet LA", "type": "TV", "homeAway": "away"},
+                    {"name": "97.3 The Fan", "type": "FM", "homeAway": "home"}],
+     "doubleHeader": "N", "gameNumber": 1}
+  ]},
+  {"date": "2027-04-03", "games": [
+    {"gamePk": 900002, "gameType": "R", "gameDate": "2027-04-03T10:33:00Z", "officialDate": "2027-04-03",
+     "status": {"abstractGameState": "Preview", "codedGameState": "S", "detailedState": "Scheduled", "startTimeTBD": true},
+     "teams": {"away": {"team": {"id": 119, "name": "Los Angeles Dodgers", "abbreviation": "LAD"}},
+               "home": {"team": {"id": 135, "name": "San Diego Padres", "abbreviation": "SD"}}},
+     "venue": {"id": 2680, "name": "Petco Park"}, "doubleHeader": "N", "gameNumber": 1},
+    {"gamePk": 900003, "gameType": "R", "gameDate": "2027-04-03T20:10:00Z", "officialDate": "2027-04-05",
+     "status": {"abstractGameState": "Final", "codedGameState": "D", "detailedState": "Postponed",
+                "reason": "Rain", "startTimeTBD": false},
+     "teams": {"away": {"team": {"id": 135, "name": "San Diego Padres", "abbreviation": "SD"}},
+               "home": {"team": {"id": 119, "name": "Los Angeles Dodgers", "abbreviation": "LAD"}}},
+     "venue": {"id": 22, "name": "Dodger Stadium"}, "doubleHeader": "S", "gameNumber": 2}
+  ]},
+  {"date": "2027-04-04", "games": [
+    {"gamePk": 900004, "gameType": "R", "gameDate": "2027-04-04T20:10:00Z", "officialDate": "2027-04-04",
+     "status": {"abstractGameState": "Live", "codedGameState": "I", "detailedState": "In Progress", "startTimeTBD": false},
+     "teams": {"away": {"team": {"id": 135, "name": "San Diego Padres", "abbreviation": "SD"}, "score": 2},
+               "home": {"team": {"id": 119, "name": "Los Angeles Dodgers", "abbreviation": "LAD"}, "score": 1}},
+     "linescore": {"currentInning": 5, "currentInningOrdinal": "5th", "inningState": "Top", "isTopInning": true,
+                   "scheduledInnings": 9},
+     "venue": {"id": 22, "name": "Dodger Stadium"}, "doubleHeader": "N", "gameNumber": 1},
+    {"gamePk": 900005, "gameType": "R", "gameDate": "2027-04-04T01:40:00Z", "officialDate": "2027-04-03",
+     "status": {"abstractGameState": "Final", "codedGameState": "F", "detailedState": "Final", "startTimeTBD": false},
+     "teams": {"away": {"team": {"id": 135, "name": "San Diego Padres", "abbreviation": "SD"}, "score": 4},
+               "home": {"team": {"id": 119, "name": "Los Angeles Dodgers", "abbreviation": "LAD"}, "score": 5}},
+     "linescore": {"currentInning": 10, "currentInningOrdinal": "10th", "inningState": "Bottom", "isTopInning": false,
+                   "scheduledInnings": 9},
+     "venue": {"id": 22, "name": "Dodger Stadium"}, "doubleHeader": "N", "gameNumber": 1}
+  ]}
+]}

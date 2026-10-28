@@ -70,6 +70,7 @@ public class BackupExportService {
     private final ThemePackService themePackService;
     private final AvatarPackService avatarPackService;
     private final RewardService rewardService;
+    private final SportsTeamService sportsTeamService;
     private final Clock clock;
 
     public BackupDocument export(Family principal) {
@@ -96,7 +97,8 @@ public class BackupExportService {
                 themePackService.exportAll(family),
                 activity(family),
                 avatarPackService.exportAll(family),
-                rewardService.exportAll(family)
+                rewardService.exportAll(family),
+                sportsTeamService.exportAll(family, memberRefs(family))
         );
     }
 
@@ -253,5 +255,11 @@ public class BackupExportService {
 
     private static String ref(UUID id) {
         return id.toString();
+    }
+
+    /** Each member's ref, for sections that point at members. */
+    private Map<UUID, String> memberRefs(Family family) {
+        return familyMemberRepository.findByFamily(family).stream()
+                .collect(Collectors.toMap(FamilyMember::getId, m -> ref(m.getId())));
     }
 }

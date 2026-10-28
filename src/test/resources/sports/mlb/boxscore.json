@@ -1,0 +1,6 @@
+{"teams": {"home": {"team": {"id": 119, "abbreviation": "LAD"}}, "away": {"team": {"id": 135, "abbreviation": "SD"}}},
+ "topPerformers": [
+   {"player": {"person": {"id": 10, "fullName": "Eve Slugger"}, "stats": {"batting": {"summary": "2-3 | HR, 2 RBI"}}},
+    "type": "hitter"},
+   {"player": {"person": {"id": 11, "fullName": "Finn Arm"},
+               "stats": {"pitching": {"summary": "5.0 IP, ER, 7 K, BB"}}}, "type": "starter"}]}

@@ -19,6 +19,10 @@
 > - A rewards shop (`/api/rewards`): parents keep a catalogue priced in chore points with
 >   their own PIN; anyone asks for a reward they can afford, which holds the points; a
 >   parent's PIN approves (a `REDEEMED` line spends them in the points log) or declines.
+> - Followed teams (`/api/sports`): a family follows teams, whose games go on the calendar
+>   in their fans' lanes (never into Google Calendar) with live scores while a game is on.
+>   Sources sit behind `SportsDataProvider`; MLB's official Stats API is the first. Live
+>   scores refresh every 30 s only while a followed game is on, one request for all devices.
 > - CI builds a multi-arch image (amd64 + arm64) and needs no repository secrets; the
 >   release-please and add-to-project workflows are gone because this repo is push-mirrored
 >   from Gitea to GitHub.
@@ -66,6 +70,7 @@ Base path: `/api`. All routes require a `Bearer` JWT except `/api/health`, `/api
 | Lists | `/api/lists` | lists, items, preferences |
 | Meals | `/api/meals` | weekly board + slots |
 | Recipes | `/api/recipes` | CRUD + `import` from URL |
+| Sports | `/api/sports` | leagues, team search, followed teams, games, live scores, the live panel |
 | Rewards | `/api/rewards` | the shop: catalogue (parent PIN), asking, approving or declining (parent PIN) |
 | Avatar packs | `/api/avatar-packs` | import / list / fetch / delete sets of characters to pick avatars from |
 | Google | `/api/google` | OAuth, calendar selection, sync |

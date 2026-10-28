@@ -46,7 +46,9 @@ public record BackupDocument(
         /** Absent in backups taken before avatar packs existed; treated as empty. */
         @Valid List<AvatarPackBackup> avatarPacks,
         /** The rewards on offer; absent in backups taken before the shop existed. */
-        @Valid List<RewardBackup> rewards
+        @Valid List<RewardBackup> rewards,
+        /** Teams the family follows; absent in backups taken before teams existed. Games re-sync. */
+        @Valid List<FollowedTeamBackup> followedTeams
 ) {
     public static final int CURRENT_VERSION = 1;
 
@@ -73,6 +75,30 @@ public record BackupDocument(
         this(version, exportedAt, family, members, chores, lists, recipes, meals, events, themePacks, activity,
                 avatarPacks, null);
     }
+
+    /** The shape before followed teams existed. */
+    public BackupDocument(Integer version, Instant exportedAt, FamilyBackup family, List<MemberBackup> members,
+                          List<ChoreBackup> chores, ListsBackup lists, List<RecipeBackup> recipes,
+                          List<MealSlotBackup> meals, List<EventBackup> events, List<ThemePackBackup> themePacks,
+                          List<ActivityBackup> activity, List<AvatarPackBackup> avatarPacks,
+                          List<RewardBackup> rewards) {
+        this(version, exportedAt, family, members, chores, lists, recipes, meals, events, themePacks, activity,
+                avatarPacks, rewards, null);
+    }
+
+    /** A team the family follows; {@code fans} are member refs in this file. */
+    public record FollowedTeamBackup(
+            @NotNull com.familyhub.demo.sports.SportsLeague league,
+            @NotBlank String providerTeamId,
+            @NotBlank String name,
+            String shortName,
+            String abbreviation,
+            String logoUrl,
+            String color,
+            boolean showOnCalendar,
+            boolean hideScores,
+            List<String> fans
+    ) {}
 
     /**
      * One line of the chore log. Refs point at members and chores in this file, or are

@@ -1,0 +1,6 @@
+{"currentInning": 5, "currentInningOrdinal": "5th", "inningState": "Top", "isTopInning": true, "scheduledInnings": 9,
+ "teams": {"home": {"runs": 1, "hits": 4, "errors": 0}, "away": {"runs": 2, "hits": 6, "errors": 1}},
+ "offense": {"batter": {"id": 1, "fullName": "Alex Batter"}, "first": {"id": 2, "fullName": "Ben Runner"},
+             "third": {"id": 3, "fullName": "Cal Runner"}, "team": {"id": 135, "name": "San Diego Padres"}},
+ "defense": {"pitcher": {"id": 4, "fullName": "Dan Pitcher"}, "team": {"id": 119, "name": "Los Angeles Dodgers"}},
+ "balls": 2, "strikes": 1, "outs": 1}

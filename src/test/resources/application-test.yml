@@ -34,3 +34,8 @@ google:
 security:
   # Base64-encoded 32-byte key for AES-256
   token-encryption-key: hZVYYDBsu6sIox9GnjtoSB6Wv3cgjVG5euDC/JVAHZ4=
+
+sports:
+  # Tests call the sports jobs themselves; the schedulers never fire on their own.
+  poll-initial-delay: PT1H
+  schedule-cron: "-"

@@ -1,0 +1,6 @@
+{"teams": [
+  {"id": 135, "name": "San Diego Padres", "teamName": "Padres", "clubName": "Padres", "shortName": "San Diego",
+   "abbreviation": "SD", "active": true},
+  {"id": 119, "name": "Los Angeles Dodgers", "teamName": "Dodgers", "clubName": "Dodgers", "shortName": "LA Dodgers",
+   "abbreviation": "LAD", "active": true}
+]}

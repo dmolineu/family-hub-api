@@ -72,6 +72,36 @@ public class PhotoFiles {
     }
 
     /**
+     * Checks a folder of existing photos a family chose to show: under an allowed root
+     * (symbolic links resolved), there, and readable. It is never written to.
+     *
+     * @throws BadRequestException naming what is wrong (400)
+     */
+    public Path validateReadable(String folder) {
+        if (folder == null || folder.isBlank() || !Path.of(folder.trim()).isAbsolute()) {
+            throw new BadRequestException("Give the full path of a folder, starting with /.");
+        }
+        Path path = Path.of(folder.trim()).normalize();
+        if (!underARoot(path)) {
+            throw outsideRoots();
+        }
+        if (!Files.isDirectory(path)) {
+            throw new BadRequestException("The server can't find a folder at " + path + ".");
+        }
+        try {
+            if (!underARoot(path.toRealPath())) {
+                throw outsideRoots();
+            }
+        } catch (IOException e) {
+            throw new BadRequestException("The server can't find a folder at " + path + ".");
+        }
+        if (!Files.isReadable(path)) {
+            throw new BadRequestException("The server can't read " + path + ".");
+        }
+        return path;
+    }
+
+    /**
      * Writes a photo into a folder under a name a person browsing the share can read,
      * "2026/2026-10-27_17-45-12_ab12cd34.jpg", and returns that name. Written to a
      * temporary file first, so a half-written photo is never seen.

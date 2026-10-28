@@ -4,6 +4,10 @@ import com.familyhub.demo.dto.ApiResponse;
 import com.familyhub.demo.dto.PhotoFolderRequest;
 import com.familyhub.demo.dto.PhotoResponse;
 import com.familyhub.demo.dto.PhotoStorageResponse;
+import org.springframework.web.bind.annotation.RequestParam;
+import com.familyhub.demo.service.FolderPhotoService;
+import com.familyhub.demo.dto.PhotoSourceResponse;
+import com.familyhub.demo.dto.PhotoSourceRequest;
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.model.FamilyPhoto;
 import com.familyhub.demo.service.PhotoService;
@@ -42,6 +46,7 @@ public class PhotoController {
 
     private final PhotoService photoService;
     private final PhotoStorageService photoStorageService;
+    private final FolderPhotoService folderPhotoService;
 
     /** The family's photos, newest first. */
     @GetMapping
@@ -77,6 +82,40 @@ public class PhotoController {
                 .contentType(MediaType.IMAGE_JPEG)
                 .cacheControl(IMMUTABLE_PRIVATE)
                 .body(photo.getThumbnail());
+    }
+
+    /** The folder of existing photos shown in the slideshow, and how its reading went. */
+    @GetMapping("/source")
+    public ResponseEntity<ApiResponse<PhotoSourceResponse>> source(@AuthenticationPrincipal Family family) {
+        return ResponseEntity.ok(new ApiResponse<>(folderPhotoService.status(family), ""));
+    }
+
+    /** Chooses (or, empty, clears) the folder of existing photos (a parent's PIN); read in the background. */
+    @PutMapping("/source")
+    public ResponseEntity<ApiResponse<PhotoSourceResponse>> chooseSource(
+            @AuthenticationPrincipal Family family,
+            @Valid @RequestBody PhotoSourceRequest request
+    ) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(new ApiResponse<>(folderPhotoService.choose(family, request), "Reading the folder"));
+    }
+
+    /** A random handful of the folder's pictures for one showing of the slideshow. */
+    @GetMapping("/folder")
+    public ResponseEntity<ApiResponse<List<String>>> folderSample(
+            @AuthenticationPrincipal Family family,
+            @RequestParam(defaultValue = "200") int sample
+    ) {
+        return ResponseEntity.ok(new ApiResponse<>(folderPhotoService.sample(family, sample), ""));
+    }
+
+    /** One of the folder's pictures, shrunk for the screen and the right way up. */
+    @GetMapping("/folder/{id}/content")
+    public ResponseEntity<byte[]> folderContent(@AuthenticationPrincipal Family family, @PathVariable UUID id) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_JPEG)
+                .cacheControl(IMMUTABLE_PRIVATE)
+                .body(folderPhotoService.content(family, id));
     }
 
     /** Where the family's photos live and where they may go. */

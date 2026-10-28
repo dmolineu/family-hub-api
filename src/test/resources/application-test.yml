@@ -44,3 +44,5 @@ photos:
   # Every test context writes photos under one temporary root.
   roots: ${java.io.tmpdir}/familyhub-test-photos
   default-folder: ${java.io.tmpdir}/familyhub-test-photos/library
+  # Tests read source folders themselves; the daily re-read never fires on its own.
+  source-index-cron: "-"

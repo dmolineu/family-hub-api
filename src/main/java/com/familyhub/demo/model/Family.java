@@ -37,6 +37,11 @@ public class Family implements UserDetails {
     @Column(name = "photo_folder", length = 500)
     private String photoFolder;
 
+    /** A folder of existing photos shown in the slideshow too, read-only; null for none. */
+    @JsonIgnore
+    @Column(name = "photo_source_folder", length = 500)
+    private String photoSourceFolder;
+
     @JsonIgnore
     @Column(nullable = false)
     private String passwordHash;

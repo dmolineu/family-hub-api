@@ -30,6 +30,10 @@
 >   in their fans' lanes (never into Google Calendar) with live scores while a game is on.
 >   Sources sit behind `SportsDataProvider`; MLB's official Stats API is the first. Live
 >   scores refresh every 30 s only while a followed game is on, one request for all devices.
+> - A folder of photos the family already has (`/api/photos/source`, under the same
+>   roots as photo storage) joins the slideshow: indexed in the background and daily,
+>   skipping hidden and `@eaDir`-style folders, served shrunk to 1920 px and turned upright
+>   from the EXIF orientation. HEIC files are counted but not shown (no decoder in the JVM).
 > - CI builds a multi-arch image (amd64 + arm64) and needs no repository secrets; the
 >   release-please and add-to-project workflows are gone because this repo is push-mirrored
 >   from Gitea to GitHub.

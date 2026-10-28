@@ -47,3 +47,11 @@ photos:
   # libheif's decoder, installed in the image; "-" skips HEIC photos instead.
   heic-decoder: ${PHOTO_HEIC_DECODER:heif-dec}
 
+# The family inbox: a Gmail address the family sends photos, flyers and recipes to.
+# Off until the address, its app password and the family's username are all set.
+inbox:
+  username: ${INBOX_IMAP_USER:}
+  password: ${INBOX_IMAP_PASSWORD:}
+  family-username: ${INBOX_FAMILY:}
+  poll-interval: ${INBOX_POLL_INTERVAL:PT2M}
+

@@ -54,3 +54,6 @@ theme-packs/out/
 *.p12
 *.pfx
 *.jks
+
+# The Claude gateway's dependencies
+claude-gateway/node_modules/

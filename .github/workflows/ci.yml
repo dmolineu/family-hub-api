@@ -60,6 +60,23 @@ jobs:
           path: target/surefire-reports/
           retention-days: 7
 
+  claude-gateway:
+    name: Claude gateway tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: claude-gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # The tests script Claude Code's messages: no install, sign-in or network needed.
+      - name: Test
+        run: npm test
+
   publish-docker:
     needs: [build-and-test, secrets]
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'

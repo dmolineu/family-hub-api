@@ -1,5 +1,6 @@
 package com.familyhub.demo.service;
 
+import com.familyhub.demo.config.PhotoStorageProperties;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -12,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
+import java.util.List;
 import java.util.Objects;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -60,6 +62,27 @@ class HeifDecCommandTest {
     }
 
     @Test
+    void fallsBackToTheOlderNameOfTheSameTool() throws Exception {
+        // libheif before 1.18 (Ubuntu 24.04's, say) calls its decoder heif-convert.
+        Path jpeg = temp.resolve("decoded.jpg");
+        Files.write(jpeg, new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, 9});
+        HeifDecCommand decoder = new HeifDecCommand(
+                List.of(temp.resolve("no-such-heif-dec").toString(), script("cp '" + jpeg + "' \"$4\"")),
+                Duration.ofSeconds(10));
+
+        assertThat(decoder.available()).isTrue();
+        assertThat(decoder.toJpeg(heic())).isEqualTo(Files.readAllBytes(jpeg));
+    }
+
+    @Test
+    void theDefaultTriesBothNames() {
+        PhotoStorageProperties properties = new PhotoStorageProperties();
+        assertThat(HeifDecCommand.candidatesFor(properties.getHeicDecoder())).containsExactly("heif-dec", "heif-convert");
+        assertThat(HeifDecCommand.candidatesFor("/opt/heif/bin/heif-dec")).containsExactly("/opt/heif/bin/heif-dec");
+        assertThat(HeifDecCommand.candidatesFor("-")).isEmpty();
+    }
+
+    @Test
     void aPictureItCannotDecodeIsAnIOException() throws Exception {
         HeifDecCommand decoder = new HeifDecCommand(script("echo 'bad file' >&2; exit 1"), Duration.ofSeconds(10));
 
@@ -79,8 +102,9 @@ class HeifDecCommandTest {
 
     @Test
     void theRealDecoderTurnsAnIphoneStyleRotatedPhotoUprightOnce() throws Exception {
-        HeifDecCommand decoder = new HeifDecCommand("heif-dec", Duration.ofSeconds(30));
-        assumeTrue(decoder.available(), "heif-dec is not installed here (it is in the server image and CI)");
+        // The server's own default: heif-dec, or heif-convert on an older libheif (CI's).
+        HeifDecCommand decoder = new HeifDecCommand(new PhotoStorageProperties());
+        assumeTrue(decoder.available(), "libheif's decoder is not installed here (it is in the server image and CI)");
         Path file = temp.resolve("rotated.heic");
         try (InputStream in = Objects.requireNonNull(getClass().getResourceAsStream("/photos/rotated.heic"))) {
             Files.copy(in, file);

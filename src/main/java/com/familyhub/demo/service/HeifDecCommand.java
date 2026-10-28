@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
@@ -18,7 +19,8 @@ import java.util.stream.Stream;
  * Decodes HEIC with libheif's {@code heif-dec}, installed in the server image, run as
  * a separate process with a time limit so a damaged file can never hang or crash the
  * server. heif-dec applies the picture's stored rotation and resets its EXIF
- * orientation, so the JPEG it writes is already upright.
+ * orientation, so the JPEG it writes is already upright. libheif before 1.18 names the
+ * same tool {@code heif-convert}, which the default falls back to.
  */
 @Slf4j
 @Component
@@ -27,37 +29,60 @@ public class HeifDecCommand implements HeicDecoder {
     private static final Duration VERSION_TIMEOUT = Duration.ofSeconds(10);
     private static final int MESSAGE_LIMIT = 300;
 
-    private final String command;
+    private static final String DEFAULT_COMMAND = "heif-dec";
+    private static final String OLDER_NAME = "heif-convert";
+
+    private final List<String> candidates;
     private final Duration timeout;
     private volatile Boolean available;
+    private volatile String command;
 
     /** The command configured in {@code photos.heic-decoder}. */
     @Autowired
     public HeifDecCommand(PhotoStorageProperties properties) {
-        this(properties.getHeicDecoder(), DECODE_TIMEOUT);
+        this(candidatesFor(properties.getHeicDecoder()), DECODE_TIMEOUT);
     }
 
     HeifDecCommand(String command, Duration timeout) {
-        this.command = command == null ? "" : command.trim();
+        this(candidatesFor(command), timeout);
+    }
+
+    HeifDecCommand(List<String> candidates, Duration timeout) {
+        this.candidates = List.copyOf(candidates);
         this.timeout = timeout;
     }
 
-    /** Asks the command for its version once; a missing or switched-off command is unavailable. */
+    /** The commands to try: the configured one, and for the default also its older name. */
+    static List<String> candidatesFor(String configured) {
+        String command = configured == null ? "" : configured.trim();
+        if (command.isEmpty() || command.equals("-")) {
+            return List.of();
+        }
+        return command.equals(DEFAULT_COMMAND) ? List.of(DEFAULT_COMMAND, OLDER_NAME) : List.of(command);
+    }
+
+    /** Asks each candidate for its version once; the first that answers is used. */
     @Override
     public boolean available() {
         Boolean known = available;
         if (known == null) {
-            known = probe();
+            known = false;
+            if (candidates.isEmpty()) {
+                log.info("HEIC decoding is switched off; HEIC photos will be skipped");
+            }
+            for (String candidate : candidates) {
+                if (probe(candidate)) {
+                    command = candidate;
+                    known = true;
+                    break;
+                }
+            }
             available = known;
         }
         return known;
     }
 
-    private boolean probe() {
-        if (command.isEmpty() || command.equals("-")) {
-            log.info("HEIC decoding is switched off; HEIC photos will be skipped");
-            return false;
-        }
+    private static boolean probe(String command) {
         try {
             Process process = new ProcessBuilder(command, "--version").redirectErrorStream(true).start();
             if (!process.waitFor(VERSION_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)) {

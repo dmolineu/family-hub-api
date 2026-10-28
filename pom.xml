@@ -138,6 +138,13 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
+        <!-- Claude reads the inbox's flyers and recipes (structured output). 2.72.0 is the
+             newest release at least two weeks old when added (2026-10-28). -->
+        <dependency>
+            <groupId>com.anthropic</groupId>
+            <artifactId>anthropic-java</artifactId>
+            <version>2.72.0</version>
+        </dependency>
         <!-- A real IMAP/SMTP server in-process for the inbox tests. -->
         <dependency>
             <groupId>com.icegreen</groupId>

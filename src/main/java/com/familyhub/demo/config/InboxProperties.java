@@ -26,6 +26,8 @@ public class InboxProperties {
     private String username;
     /** Gmail's app password for the mailbox (never the account's own password). */
     private String password;
+    /** The mailbox's address for replies' From; the username when not set. */
+    private String address;
     /** The username of the family the inbox belongs to. */
     private String familyUsername;
     /**
@@ -38,8 +40,19 @@ public class InboxProperties {
     private String processedLabel = "FamilyHub-Processed";
     private String unrecognisedLabel = "FamilyHub-Unrecognised";
     private String unprocessedLabel = "FamilyHub-Unprocessed";
+    /** The Anthropic API key for reading flyers and recipes; without it only photos are taken. */
+    private String anthropicApiKey;
+    /** A different API address, for tests. */
+    private String anthropicBaseUrl;
+    private int anthropicMaxRetries = 2;
+    private String readerModel = "claude-opus-5-5";
     private Duration connectTimeout = Duration.ofSeconds(15);
     private Duration readTimeout = Duration.ofSeconds(60);
+
+    /** The address replies are sent from. */
+    public String fromAddress() {
+        return notBlank(address) ? address : username;
+    }
 
     /** Whether there is a mailbox to read. */
     public boolean configured() {

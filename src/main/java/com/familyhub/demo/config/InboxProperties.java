@@ -40,12 +40,15 @@ public class InboxProperties {
     private String processedLabel = "FamilyHub-Processed";
     private String unrecognisedLabel = "FamilyHub-Unrecognised";
     private String unprocessedLabel = "FamilyHub-Unprocessed";
-    /** The Anthropic API key for reading flyers and recipes; without it only photos are taken. */
-    private String anthropicApiKey;
-    /** A different API address, for tests. */
-    private String anthropicBaseUrl;
-    private int anthropicMaxRetries = 2;
+    /**
+     * The Claude gateway that reads flyers and recipes (claude-gateway/ in this
+     * repository, e.g. http://claude-gateway:8080); without it only photos are taken.
+     */
+    private String readerUrl;
     private String readerModel = "claude-opus-5-5";
+    private String readerEffort = "high";
+    /** Longer than the gateway's own limit (4 minutes), so it answers TIMEOUT first. */
+    private Duration readerTimeout = Duration.ofMinutes(5);
     private Duration connectTimeout = Duration.ofSeconds(15);
     private Duration readTimeout = Duration.ofSeconds(60);
 

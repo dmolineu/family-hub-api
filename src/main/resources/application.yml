@@ -54,6 +54,7 @@ inbox:
   password: ${INBOX_IMAP_PASSWORD:}
   family-username: ${INBOX_FAMILY:}
   poll-interval: ${INBOX_POLL_INTERVAL:PT2M}
-  # Reading flyers and recipes needs Claude; without a key only emailed photos are taken.
-  anthropic-api-key: ${ANTHROPIC_API_KEY:}
+  # Reading flyers and recipes needs the Claude gateway (claude-gateway/); without it
+  # only emailed photos are taken.
+  reader-url: ${INBOX_READER_URL:}
 

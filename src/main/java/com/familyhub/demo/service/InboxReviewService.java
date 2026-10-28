@@ -92,8 +92,10 @@ public class InboxReviewService {
         List<String> memberAddresses = members.findByFamily(family).stream().map(FamilyMember::getEmail)
                 .filter(Objects::nonNull).map(email -> email.trim().toLowerCase(Locale.ROOT))
                 .filter(email -> !email.isEmpty()).distinct().toList();
+        // A mailbox that cannot be read matters most; otherwise why flyers are waiting, if they are.
+        String lastError = reading.lastError() != null ? reading.lastError() : reader.problem().orElse(null);
         return new InboxStatusResponse(reading.configured(), reading.configured() ? properties.fromAddress() : null,
-                reader.available(), reading.lastReadAt(), reading.lastError(), memberAddresses,
+                reader.available(), reading.lastReadAt(), lastError, memberAddresses,
                 senders.findByFamilyOrderByAddress(family).stream()
                         .map(sender -> new InboxSenderResponse(sender.getId(), sender.getAddress())).toList(),
                 imports.countByFamilyAndStatus(family, InboxImportStatus.PENDING),

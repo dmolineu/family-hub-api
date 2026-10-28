@@ -54,6 +54,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -63,6 +64,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -136,6 +138,7 @@ class FamilyInboxIntegrationTest {
         static final AtomicReference<MailReading> NEXT = new AtomicReference<>();
         static final AtomicReference<MailReaderException> FAIL_ONCE = new AtomicReference<>();
         static final AtomicInteger CALLS = new AtomicInteger();
+        static final AtomicReference<String> PROBLEM = new AtomicReference<>();
 
         @Bean
         @Primary
@@ -144,6 +147,11 @@ class FamilyInboxIntegrationTest {
                 @Override
                 public boolean available() {
                     return AVAILABLE.get();
+                }
+
+                @Override
+                public Optional<String> problem() {
+                    return Optional.ofNullable(PROBLEM.get());
                 }
 
                 @Override
@@ -189,6 +197,7 @@ class FamilyInboxIntegrationTest {
         ScriptedReader.AVAILABLE.set(true);
         ScriptedReader.NEXT.set(null);
         ScriptedReader.FAIL_ONCE.set(null);
+        ScriptedReader.PROBLEM.set(null);
         ScriptedReader.CALLS.set(0);
     }
 
@@ -337,6 +346,21 @@ class FamilyInboxIntegrationTest {
 
         assertThat(ScriptedReader.CALLS.get()).isZero();
         assertThat(count("FamilyHub-Unprocessed")).isEqualTo(1);
+    }
+
+    @Test
+    void whyTheReaderCannotReadShowsInTheInboxStatus() throws Exception {
+        ScriptedReader.PROBLEM.set("Flyers and recipes are waiting: the Claude reader is not signed in");
+        poller.pollNow();
+
+        mockMvc.perform(get("/api/inbox").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.lastError")
+                        .value("Flyers and recipes are waiting: the Claude reader is not signed in"));
+
+        ScriptedReader.PROBLEM.set(null);
+        mockMvc.perform(get("/api/inbox").header("Authorization", "Bearer " + token))
+                .andExpect(jsonPath("$.data.lastError").doesNotExist());
     }
 
     @Test

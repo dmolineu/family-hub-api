@@ -2,6 +2,7 @@ package com.familyhub.demo.service;
 
 import com.familyhub.demo.dto.PhotoResponse;
 import com.familyhub.demo.exception.BadRequestException;
+import com.familyhub.demo.exception.ConflictException;
 import com.familyhub.demo.exception.ResourceNotFoundException;
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.model.FamilyPhoto;
@@ -27,6 +28,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
@@ -50,6 +53,8 @@ public class PhotoService {
     private static final String UNREADABLE = "Photos must be JPEG or PNG files.";
 
     private final FamilyPhotoRepository familyPhotoRepository;
+    private final PhotoFiles photoFiles;
+    private final PhotoMoveTracker moveTracker;
     private final Clock clock;
 
     /** The family's photos, newest first. */
@@ -77,6 +82,14 @@ public class PhotoService {
                     + " photos). Delete some first.");
         }
         Decoded decoded = decode(bytes);
+        if (moveTracker.isMoving(family.getId())) {
+            throw new ConflictException("The photos are moving to their new folder. Try again in a moment.");
+        }
+
+        // The file first, so a row never points at a photo that is not there.
+        Instant now = Instant.now(clock);
+        Path folder = photoFiles.folderFor(family);
+        String fileName = photoFiles.write(folder, bytes, contentType, now, zone(family));
 
         FamilyPhoto photo = new FamilyPhoto();
         photo.setFamily(family);
@@ -84,10 +97,16 @@ public class PhotoService {
         photo.setWidth(decoded.width());
         photo.setHeight(decoded.height());
         photo.setSizeBytes(bytes.length);
-        photo.setData(bytes);
+        photo.setFileName(fileName);
         photo.setThumbnail(thumbnail(decoded.image()));
-        photo.setCreatedAt(Instant.now(clock));
-        FamilyPhoto saved = familyPhotoRepository.save(photo);
+        photo.setCreatedAt(now);
+        FamilyPhoto saved;
+        try {
+            saved = familyPhotoRepository.save(photo);
+        } catch (RuntimeException e) {
+            photoFiles.deleteQuietly(folder, fileName);
+            throw e;
+        }
         log.info("Photo uploaded, photoId={}, familyId={}, bytes={}", saved.getId(), family.getId(), bytes.length);
         return toResponse(saved);
     }
@@ -98,11 +117,33 @@ public class PhotoService {
                 .orElseThrow(() -> new ResourceNotFoundException("Photo", id));
     }
 
-    /** Removes a photo, only for its own family. */
+    /** The photo's bytes: from its file, or from the database for one not moved out yet. */
+    public byte[] content(Family family, UUID id) {
+        FamilyPhoto photo = get(family, id);
+        if (photo.getFileName() == null) {
+            return photo.getData();
+        }
+        return photoFiles.read(photoFiles.folderFor(managedFamily(photo)), photo.getFileName());
+    }
+
+    /** Removes a photo and its file, only for its own family. */
     @Transactional
     public void delete(Family family, UUID id) {
-        familyPhotoRepository.delete(get(family, id));
+        FamilyPhoto photo = get(family, id);
+        familyPhotoRepository.delete(photo);
+        if (photo.getFileName() != null) {
+            photoFiles.deleteQuietly(photoFiles.folderFor(managedFamily(photo)), photo.getFileName());
+        }
         log.info("Photo deleted, photoId={}, familyId={}", id, family.getId());
+    }
+
+    /** The photo's family as stored now (the signed-in principal may predate a folder change). */
+    private static Family managedFamily(FamilyPhoto photo) {
+        return photo.getFamily();
+    }
+
+    private static ZoneId zone(Family family) {
+        return ZoneId.of(FamilyTimezoneResolver.resolveStoredTimezoneOrDefault(family.getTimezone()));
     }
 
     private static String detectType(byte[] bytes) {

@@ -25,4 +25,11 @@ public interface FamilyPhotoRepository extends JpaRepository<FamilyPhoto, UUID> 
 
     /** How many photos a family has (the library is capped). */
     long countByFamily(Family family);
+
+    /** Every photo of a family, for moving the library to another folder. */
+    List<FamilyPhoto> findByFamily(Family family);
+
+    /** Photos whose bytes are still in the database, uploaded before photos became files. */
+    @Query("select p.id from FamilyPhoto p where p.fileName is null and p.data is not null")
+    List<UUID> findIdsStillInTheDatabase();
 }

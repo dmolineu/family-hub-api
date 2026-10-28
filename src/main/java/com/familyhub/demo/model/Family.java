@@ -32,6 +32,11 @@ public class Family implements UserDetails {
     @Column(unique = true, nullable = false)
     private String username;
 
+    /** Where the family's photos live; null for the server's default folder. */
+    @JsonIgnore
+    @Column(name = "photo_folder", length = 500)
+    private String photoFolder;
+
     @JsonIgnore
     @Column(nullable = false)
     private String passwordHash;

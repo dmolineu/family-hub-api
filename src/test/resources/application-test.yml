@@ -39,3 +39,8 @@ sports:
   # Tests call the sports jobs themselves; the schedulers never fire on their own.
   poll-initial-delay: PT1H
   schedule-cron: "-"
+
+photos:
+  # Every test context writes photos under one temporary root.
+  roots: ${java.io.tmpdir}/familyhub-test-photos
+  default-folder: ${java.io.tmpdir}/familyhub-test-photos/library

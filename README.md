@@ -16,6 +16,11 @@
 >   character from an avatar pack, stored on the member as a PNG/JPEG/WebP data URL of at
 >   most 64 KB (checked by its bytes). Avatar packs are family data at `/api/avatar-packs`
 >   and travel in backups; their content stays private and is never part of this repo.
+> - Screensaver photos are files in a folder (`/photos/library` by default) under the
+>   roots set by `PHOTO_STORAGE_ROOTS` (`/photos`); a family moves its library elsewhere
+>   under them with a parent's PIN (`/api/photos/storage`), copied before it switches.
+>   Photos uploaded earlier move out of the database at startup. Back up the folder:
+>   `pg_dump` no longer carries the photos (thumbnails stay in the database).
 > - Five wrong sign-in passwords for a username within 15 minutes lock it for 15 minutes
 >   (429 saying how long is left); the server's `reset-password` still works.
 > - A rewards shop (`/api/rewards`): parents keep a catalogue priced in chore points with

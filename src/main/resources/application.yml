@@ -36,3 +36,10 @@ sports:
   mlb-base-url: ${SPORTS_MLB_BASE_URL:https://statsapi.mlb.com}
   live-poll-interval: ${SPORTS_LIVE_POLL_INTERVAL:PT30S}
   schedule-cron: ${SPORTS_SCHEDULE_CRON:0 30 4 * * *}
+
+# Where screensaver photos are stored. A family picks its folder in the app, but only
+# under these roots: the folders mounted into the container for photos.
+photos:
+  roots: ${PHOTO_STORAGE_ROOTS:/photos}
+  default-folder: ${PHOTO_DEFAULT_FOLDER:/photos/library}
+

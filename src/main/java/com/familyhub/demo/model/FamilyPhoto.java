@@ -45,8 +45,13 @@ public class FamilyPhoto {
 
     // An explicit length keeps the dev profile's H2 schema from defaulting to
     // varbinary(255); on PostgreSQL any length maps to bytea.
-    @Column(nullable = false, length = 16 * 1024 * 1024)
+    /** Only for photos uploaded before files: null once the photo lives in the family's folder. */
+    @Column(length = 16 * 1024 * 1024)
     private byte[] data;
+
+    /** The photo's path inside the family's photo folder; null while it is still in {@link #data}. */
+    @Column(name = "file_name", length = 200)
+    private String fileName;
 
     @Column(nullable = false, length = 1024 * 1024)
     private byte[] thumbnail;

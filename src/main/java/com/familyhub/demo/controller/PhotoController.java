@@ -1,10 +1,14 @@
 package com.familyhub.demo.controller;
 
 import com.familyhub.demo.dto.ApiResponse;
+import com.familyhub.demo.dto.PhotoFolderRequest;
 import com.familyhub.demo.dto.PhotoResponse;
+import com.familyhub.demo.dto.PhotoStorageResponse;
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.model.FamilyPhoto;
 import com.familyhub.demo.service.PhotoService;
+import com.familyhub.demo.service.PhotoStorageService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
@@ -15,6 +19,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -36,6 +41,7 @@ public class PhotoController {
             CacheControl.maxAge(Duration.ofDays(365)).cachePrivate().immutable();
 
     private final PhotoService photoService;
+    private final PhotoStorageService photoStorageService;
 
     /** The family's photos, newest first. */
     @GetMapping
@@ -60,7 +66,7 @@ public class PhotoController {
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(photo.getContentType()))
                 .cacheControl(IMMUTABLE_PRIVATE)
-                .body(photo.getData());
+                .body(photoService.content(family, id));
     }
 
     /** A 480 px JPEG thumbnail for the Photos grid. */
@@ -71,6 +77,25 @@ public class PhotoController {
                 .contentType(MediaType.IMAGE_JPEG)
                 .cacheControl(IMMUTABLE_PRIVATE)
                 .body(photo.getThumbnail());
+    }
+
+    /** Where the family's photos live and where they may go. */
+    @GetMapping("/storage")
+    public ResponseEntity<ApiResponse<PhotoStorageResponse>> storage(@AuthenticationPrincipal Family family) {
+        return ResponseEntity.ok(new ApiResponse<>(photoStorageService.status(family), ""));
+    }
+
+    /**
+     * Moves the family's photos to another folder (a parent's PIN). The move runs in the
+     * background; the response says it started, and the storage status says how it went.
+     */
+    @PutMapping("/storage")
+    public ResponseEntity<ApiResponse<PhotoStorageResponse>> moveStorage(
+            @AuthenticationPrincipal Family family,
+            @Valid @RequestBody PhotoFolderRequest request
+    ) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(new ApiResponse<>(photoStorageService.move(family, request), "Moving the photos"));
     }
 
     /** Removes a photo. */

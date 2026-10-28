@@ -21,6 +21,9 @@ FROM eclipse-temurin:21-jre
 WORKDIR /app
 # create a system user with no shell
 RUN useradd -r -s /bin/false appuser
+# Photos are files under /photos. Created here and owned by the app user so a named
+# volume mounted there starts writable; a NAS share mounted there must allow it too.
+RUN mkdir -p /photos/library && chown -R appuser /photos
 # from pom.xml :: <finalName>app</finalName>
 COPY --from=build /app/target/app.jar app.jar
 USER appuser

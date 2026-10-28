@@ -78,6 +78,27 @@ class RewardIntegrationTest {
     }
 
     @Test
+    void managingTheCatalogueOpensWithAParentsPin() throws Exception {
+        Family f = familyWithAKid();
+        createReward(f, "Screen time", 20);
+
+        mockMvc.perform(post("/api/rewards/manage").header("Authorization", auth(f))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(unlock(f.momId(), "0000")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/rewards/manage").header("Authorization", auth(f))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(unlock(f.mayaId(), MOM_PIN)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/rewards/manage").header("Authorization", auth(f))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(unlock(f.momId(), MOM_PIN)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rewards", hasSize(1)))
+                .andExpect(jsonPath("$.data.rewards[0].title").value("Screen time"));
+    }
+
+    @Test
     void anotherFamilyCannotSeeOrChangeTheCatalogue() throws Exception {
         Family f = familyWithAKid();
         Family other = familyWithAKid();

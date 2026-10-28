@@ -42,6 +42,15 @@ public class RewardController {
         return ResponseEntity.ok(new ApiResponse<>(rewardService.shop(family), ""));
     }
 
+    /** Opens the catalogue for changing (parent PIN); a POST so the PIN stays out of URLs. */
+    @PostMapping("/manage")
+    public ResponseEntity<ApiResponse<RewardShopResponse>> manage(
+            @Valid @RequestBody ParentPinRequest request,
+            @AuthenticationPrincipal Family family
+    ) {
+        return ResponseEntity.ok(new ApiResponse<>(rewardService.manage(family, request), ""));
+    }
+
     /** Adds a reward (parent PIN). */
     @PostMapping
     public ResponseEntity<ApiResponse<RewardResponse>> create(

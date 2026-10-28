@@ -69,6 +69,17 @@ public class RewardService {
         );
     }
 
+    /**
+     * Opens the catalogue for changing, after checking a parent's PIN, so a wrong PIN
+     * shows before anyone types out a reward.
+     *
+     * @throws AccessDeniedException for a kid, a wrong PIN or a locked PIN (403)
+     */
+    public RewardShopResponse manage(Family family, ParentPinRequest request) {
+        parentPinService.verify(family, request.approverMemberId(), request.pin());
+        return shop(family);
+    }
+
     /** How many asks wait for a parent, for the approvals badge. */
     public long countWaiting(Family family) {
         return redemptionRepository.countByFamilyAndStatus(family, RedemptionStatus.PENDING);

@@ -25,6 +25,10 @@ public interface ChoreActivityRepository extends JpaRepository<ChoreActivity, UU
             + "where a.family = :family and a.member is not null group by a.member.id")
     List<Object[]> sumPointsByMember(@Param("family") Family family);
 
+    /** One member's points balance: the sum of their lines. */
+    @Query("select coalesce(sum(a.points), 0) from ChoreActivity a where a.member = :member")
+    int sumPoints(@Param("member") FamilyMember member);
+
     /** Removes a family's whole log (restore replaces it). */
     @Modifying(flushAutomatically = true)
     @Query("delete from ChoreActivity a where a.family = :family")

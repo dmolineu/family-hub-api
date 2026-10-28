@@ -13,11 +13,13 @@ import com.familyhub.demo.exception.ResourceNotFoundException;
 import com.familyhub.demo.model.ChoreActivity;
 import com.familyhub.demo.model.ChoreActivityKind;
 import com.familyhub.demo.model.ChoreCompletionStatus;
+import com.familyhub.demo.model.RedemptionStatus;
 import com.familyhub.demo.model.ChorePeriodCompletion;
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.model.FamilyMember;
 import com.familyhub.demo.repository.ChoreActivityRepository;
 import com.familyhub.demo.repository.ChorePeriodCompletionRepository;
+import com.familyhub.demo.repository.RewardRedemptionRepository;
 import com.familyhub.demo.repository.FamilyMemberRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -54,11 +56,13 @@ public class ChoreApprovalService {
     private final FamilyMemberRepository familyMemberRepository;
     private final ChoreActivityLog choreActivityLog;
     private final ParentPinService parentPinService;
+    private final RewardRedemptionRepository rewardRedemptionRepository;
 
     /** How many kids' chores wait; no details, so no PIN is needed (it drives a badge). */
     public PendingApprovalCountResponse countPending(Family family) {
         return new PendingApprovalCountResponse(
-                chorePeriodCompletionRepository.countByFamilyAndStatus(family, ChoreCompletionStatus.PENDING));
+                chorePeriodCompletionRepository.countByFamilyAndStatus(family, ChoreCompletionStatus.PENDING),
+                rewardRedemptionRepository.countByFamilyAndStatus(family, RedemptionStatus.PENDING));
     }
 
     /**

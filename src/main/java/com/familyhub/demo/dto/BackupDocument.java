@@ -44,7 +44,9 @@ public record BackupDocument(
         /** The chore log; absent in backups taken before approvals existed. */
         @Valid List<ActivityBackup> activity,
         /** Absent in backups taken before avatar packs existed; treated as empty. */
-        @Valid List<AvatarPackBackup> avatarPacks
+        @Valid List<AvatarPackBackup> avatarPacks,
+        /** The rewards on offer; absent in backups taken before the shop existed. */
+        @Valid List<RewardBackup> rewards
 ) {
     public static final int CURRENT_VERSION = 1;
 
@@ -61,6 +63,15 @@ public record BackupDocument(
                           List<MealSlotBackup> meals, List<EventBackup> events, List<ThemePackBackup> themePacks,
                           List<ActivityBackup> activity) {
         this(version, exportedAt, family, members, chores, lists, recipes, meals, events, themePacks, activity, null);
+    }
+
+    /** The shape before the rewards shop existed. */
+    public BackupDocument(Integer version, Instant exportedAt, FamilyBackup family, List<MemberBackup> members,
+                          List<ChoreBackup> chores, ListsBackup lists, List<RecipeBackup> recipes,
+                          List<MealSlotBackup> meals, List<EventBackup> events, List<ThemePackBackup> themePacks,
+                          List<ActivityBackup> activity, List<AvatarPackBackup> avatarPacks) {
+        this(version, exportedAt, family, members, chores, lists, recipes, meals, events, themePacks, activity,
+                avatarPacks, null);
     }
 
     /**

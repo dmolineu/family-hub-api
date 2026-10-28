@@ -69,6 +69,7 @@ public class BackupExportService {
     private final CalendarEventRepository calendarEventRepository;
     private final ThemePackService themePackService;
     private final AvatarPackService avatarPackService;
+    private final RewardService rewardService;
     private final Clock clock;
 
     public BackupDocument export(Family principal) {
@@ -94,7 +95,8 @@ public class BackupExportService {
                 events(family),
                 themePackService.exportAll(family),
                 activity(family),
-                avatarPackService.exportAll(family)
+                avatarPackService.exportAll(family),
+                rewardService.exportAll(family)
         );
     }
 

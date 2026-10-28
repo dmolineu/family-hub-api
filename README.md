@@ -16,6 +16,9 @@
 >   character from an avatar pack, stored on the member as a PNG/JPEG/WebP data URL of at
 >   most 64 KB (checked by its bytes). Avatar packs are family data at `/api/avatar-packs`
 >   and travel in backups; their content stays private and is never part of this repo.
+> - A rewards shop (`/api/rewards`): parents keep a catalogue priced in chore points with
+>   their own PIN; anyone asks for a reward they can afford, which holds the points; a
+>   parent's PIN approves (a `REDEEMED` line spends them in the points log) or declines.
 > - CI builds a multi-arch image (amd64 + arm64) and needs no repository secrets; the
 >   release-please and add-to-project workflows are gone because this repo is push-mirrored
 >   from Gitea to GitHub.
@@ -63,6 +66,7 @@ Base path: `/api`. All routes require a `Bearer` JWT except `/api/health`, `/api
 | Lists | `/api/lists` | lists, items, preferences |
 | Meals | `/api/meals` | weekly board + slots |
 | Recipes | `/api/recipes` | CRUD + `import` from URL |
+| Rewards | `/api/rewards` | the shop: catalogue (parent PIN), asking, approving or declining (parent PIN) |
 | Avatar packs | `/api/avatar-packs` | import / list / fetch / delete sets of characters to pick avatars from |
 | Google | `/api/google` | OAuth, calendar selection, sync |
 | Health | `/api/health` | liveness probe |

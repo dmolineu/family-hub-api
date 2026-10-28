@@ -87,6 +87,7 @@ public class BackupRestoreService {
     private final CalendarEventRepository calendarEventRepository;
     private final ThemePackService themePackService;
     private final AvatarPackService avatarPackService;
+    private final RewardService rewardService;
     private final EntityManager entityManager;
 
     @Transactional
@@ -119,6 +120,7 @@ public class BackupRestoreService {
         restoreEvents(document.events(), family, members);
         int themePacks = themePackService.replaceAll(document.themePacks(), family);
         int avatarPacks = avatarPackService.replaceAll(document.avatarPacks(), family);
+        int rewards = rewardService.replaceAll(document.rewards(), family);
 
         return new RestoreSummary(
                 document.members().size(),
@@ -128,7 +130,8 @@ public class BackupRestoreService {
                 document.meals().size(),
                 document.events().size(),
                 themePacks,
-                avatarPacks
+                avatarPacks,
+                rewards
         );
     }
 

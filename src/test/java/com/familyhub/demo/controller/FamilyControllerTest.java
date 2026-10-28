@@ -9,6 +9,7 @@ import com.familyhub.demo.security.JwtAuthenticationFilter;
 import com.familyhub.demo.security.WithMockFamily;
 import com.familyhub.demo.service.FamilyService;
 import com.familyhub.demo.service.JwtService;
+import com.familyhub.demo.service.ParentPinService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -43,6 +44,9 @@ class FamilyControllerTest {
 
     @MockitoBean
     FamilyService familyService;
+
+    @MockitoBean
+    ParentPinService parentPinService;
 
     private FamilyResponse sampleFamilyResponse() {
         return new FamilyResponse(

@@ -108,7 +108,7 @@ class MlbStatsApiProviderTest {
                 .andExpect(queryParam("gamePks", "900004"))
                 .andRespond(withSuccess(fixture("games-by-id.json"), MediaType.APPLICATION_JSON));
 
-        List<ProviderGame> games = provider.games(SportsLeague.MLB, List.of("900004"));
+        List<ProviderGame> games = provider.games(SportsLeague.MLB, List.of(known("900004")));
 
         assertThat(games).singleElement().satisfies(game -> {
             assertThat(game.state()).isEqualTo(GameState.FINAL);
@@ -116,6 +116,14 @@ class MlbStatsApiProviderTest {
             assertThat(game.away().score()).isEqualTo(6);
             assertThat(game.home().score()).isEqualTo(3);
         });
+    }
+
+    /** A game as the cache last knew it; only its id matters to MLB. */
+    private static ProviderGame known(String id) {
+        return new ProviderGame(id, SportsLeague.MLB, Instant.parse("2027-04-05T02:10:00Z"), false,
+                new GameSide("135", "San Diego Padres", "SD", 1),
+                new GameSide("119", "Los Angeles Dodgers", "LAD", 2),
+                null, List.of(), GameState.LIVE, "Top 5th");
     }
 
     @Test

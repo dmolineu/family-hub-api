@@ -1,0 +1,8 @@
+[
+  {"gameId": 7001, "season": 2027, "seasonLabel": "20262027", "seasonType": "regular", "tournament": null,
+   "startDate": "2026-11-04T03:00:00.000Z", "startTimeTbd": false, "homeTeamId": 301, "homeTeam": "San Diego State",
+   "homeConference": "MWC", "awayTeamId": 302, "awayTeam": "Gonzaga", "awayConference": "WCC", "neutralSite": false,
+   "conferenceGame": false, "gameType": "STD", "notes": null,
+   "broadcasts": [{"broadcastName": "EXTV", "broadcastType": "TV"}, {"broadcastName": "KXMP 1090", "broadcastType": "Radio"},
+                  {"broadcastName": "EXTV", "broadcastType": "TV"}]}
+]

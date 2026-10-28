@@ -39,6 +39,9 @@ sports:
   # Tests call the sports jobs themselves; the schedulers never fire on their own.
   poll-initial-delay: PT1H
   schedule-cron: "-"
+  # Never the real services, even when the machine running the tests has keys set.
+  cfbd-api-key: ""
+  bigballs-api-key: ""
 
 photos:
   # Every test context writes photos under one temporary root.

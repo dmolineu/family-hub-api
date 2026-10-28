@@ -1,0 +1,18 @@
+[
+  {"id": 21, "school": "San Diego State", "mascot": "Aztecs", "abbreviation": "SDSU",
+   "alternateNames": ["SDSU", "San Diego St"], "conference": "Mountain West", "division": null,
+   "classification": "fbs", "color": "#000010", "alternateColor": "#000011",
+   "logos": ["https://logos.example/21.png", "https://logos.example/21-dark.png"], "twitter": null, "location": null},
+  {"id": 2440, "school": "Nevada", "mascot": "Wolf Pack", "abbreviation": "NEV", "alternateNames": null,
+   "conference": "Mountain West", "division": null, "classification": "fbs", "color": null, "alternateColor": null,
+   "logos": ["https://logos.example/2440.png"], "twitter": null, "location": null},
+  {"id": 301, "school": "San Diego", "mascot": "Toreros", "abbreviation": "USD", "alternateNames": null,
+   "conference": "Pioneer", "division": null, "classification": "fcs", "color": null, "alternateColor": null,
+   "logos": null, "twitter": null, "location": null},
+  {"id": 9001, "school": "Example College", "mascot": "Owls", "abbreviation": "EXC", "alternateNames": null,
+   "conference": null, "division": null, "classification": "ii", "color": null, "alternateColor": null,
+   "logos": null, "twitter": null, "location": null},
+  {"id": 9002, "school": "Old Program", "mascot": null, "abbreviation": null, "alternateNames": null,
+   "conference": null, "division": null, "classification": null, "color": null, "alternateColor": null,
+   "logos": null, "twitter": null, "location": null}
+]

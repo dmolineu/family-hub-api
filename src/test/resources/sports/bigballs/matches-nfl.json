@@ -1,0 +1,13 @@
+{"data": [
+  {"id": "00000000-0000-0000-0000-000000000001", "sport": "american_football", "league": "NFL",
+   "kickoff_utc": "2026-11-02T01:20:00.000Z", "status": "in_progress",
+   "home": {"id": "00000000-0000-0000-0000-0000000000a1", "name": "Los Angeles Chargers", "short_name": "Chargers", "logo_url": null},
+   "away": {"id": "00000000-0000-0000-0000-0000000000a2", "name": "Kansas City Chiefs", "short_name": "Chiefs", "logo_url": null},
+   "score": {"home": 17, "away": 10}, "linescore": {"home": [7, 10, 0], "away": [3, 7, 0]},
+   "attendance": null, "broadcast": "EXTV", "has_odds": false, "round": null},
+  {"id": "00000000-0000-0000-0000-000000000002", "sport": "american_football", "league": "NFL",
+   "kickoff_utc": "2026-11-02T18:00:00.000Z", "status": "postponed",
+   "home": {"id": "00000000-0000-0000-0000-0000000000a3", "name": "Denver Broncos", "short_name": "Broncos", "logo_url": null},
+   "away": {"id": "00000000-0000-0000-0000-0000000000a4", "name": "Las Vegas Raiders", "short_name": "Raiders", "logo_url": null},
+   "score": null, "linescore": null, "attendance": null, "broadcast": null, "has_odds": false, "round": null}
+], "meta": {"date_window": {"date": "2026-11-02", "timezone": "UTC"}}}

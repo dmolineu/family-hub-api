@@ -58,7 +58,11 @@ public class SportsGameService {
                 .toList();
     }
 
-    /** Games live now or about to start, for the live chip; any followed team, shown or not. */
+    /**
+     * Games live now or about to start, for the live chip; any followed team, shown or not.
+     * Leagues whose source has no live scores are left out: their games would otherwise sit
+     * in the chip as "not started" for hours.
+     */
     public List<SportsGameResponse> live(Family family) {
         Instant now = Instant.now(clock);
         List<FollowedTeam> teams = followedTeamRepository.findByFamilyOrderByCreatedAtAsc(family);
@@ -66,6 +70,8 @@ public class SportsGameService {
                         family, now.minus(properties.getLiveWindowAfter()), now.plus(properties.getLiveWindowBefore()))
                 .stream()
                 .filter(game -> game.getState() == GameState.LIVE || game.getState() == GameState.SCHEDULED)
+                .filter(game -> providers.forLeague(game.getLeague())
+                        .map(provider -> provider.liveScores(game.getLeague())).orElse(false))
                 .filter(game -> !followedIn(game, teams).isEmpty())
                 .map(game -> toDto(game, teams))
                 .toList();

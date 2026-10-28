@@ -1,0 +1,7 @@
+team_abbr,team_name,team_id,team_nick,team_conf,team_division,team_color,team_logo_wikipedia,team_logo_espn
+DEN,Denver Broncos,1400,Broncos,AFC,AFC West,#000001,https://logos.example/den.png,https://espn.example/den.png
+KC,Kansas City Chiefs,2310,Chiefs,AFC,AFC West,#000002,https://logos.example/kc.png,https://espn.example/kc.png
+LAC,Los Angeles Chargers,4400,Chargers,AFC,AFC West,#000003,https://logos.example/lac.png,https://espn.example/lac.png
+LV,Las Vegas Raiders,2520,Raiders,AFC,AFC West,#000004,https://logos.example/lv.png,https://espn.example/lv.png
+OAK,Oakland Raiders,2520,Raiders,AFC,AFC West,#000004,https://logos.example/oak.png,https://espn.example/oak.png
+SD,San Diego Chargers,4400,Chargers,AFC,AFC West,#000003,https://logos.example/sd.png,https://espn.example/sd.png

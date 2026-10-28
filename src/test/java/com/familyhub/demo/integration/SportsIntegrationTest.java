@@ -21,6 +21,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -31,9 +32,11 @@ import java.util.UUID;
 import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -77,7 +80,7 @@ class SportsIntegrationTest {
     @BeforeEach
     void provider() {
         reset(mlb);
-        given(mlb.leagues()).willReturn(Set.of(SportsLeague.MLB));
+        stubLiveScores();
         given(mlb.teams(SportsLeague.MLB)).willReturn(List.of(PADRES, DODGERS));
         given(mlb.schedule(eq(SportsLeague.MLB), eq("135"), any(), any())).willReturn(List.of(
                 game("g-tomorrow", tomorrow, GameState.SCHEDULED, null, null, null),
@@ -85,14 +88,20 @@ class SportsIntegrationTest {
     }
 
     @Test
-    void listsLeaguesAndSaysWhichHaveADataSource() throws Exception {
+    void listsLeaguesAndSaysWhichHaveADataSourceAndLiveScores() throws Exception {
         String token = register().token();
         mockMvc.perform(get("/api/sports/leagues").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data", hasSize(4)))
                 .andExpect(jsonPath("$.data[?(@.league == 'MLB')].available").value(true))
-                .andExpect(jsonPath("$.data[?(@.league == 'NFL')].available").value(false))
-                .andExpect(jsonPath("$.data[?(@.league == 'NFL')].name").value("NFL"));
+                .andExpect(jsonPath("$.data[?(@.league == 'MLB')].liveScores").value(true))
+                // nflverse needs no key; live NFL scores need a BigBalls key, which tests never have.
+                .andExpect(jsonPath("$.data[?(@.league == 'NFL')].available").value(true))
+                .andExpect(jsonPath("$.data[?(@.league == 'NFL')].liveScores").value(false))
+                .andExpect(jsonPath("$.data[?(@.league == 'NFL')].name").value("NFL"))
+                // College sports need a CollegeFootballData key.
+                .andExpect(jsonPath("$.data[?(@.league == 'COLLEGE_FOOTBALL')].available").value(false))
+                .andExpect(jsonPath("$.data[?(@.league == 'MENS_COLLEGE_BASKETBALL')].available").value(false));
     }
 
     @Test
@@ -104,7 +113,7 @@ class SportsIntegrationTest {
                 .andExpect(jsonPath("$.data", hasSize(1)))
                 .andExpect(jsonPath("$.data[0].id").value("135"))
                 .andExpect(jsonPath("$.data[0].shortName").value("Padres"));
-        mockMvc.perform(get("/api/sports/leagues/NFL/teams").header("Authorization", "Bearer " + token))
+        mockMvc.perform(get("/api/sports/leagues/COLLEGE_FOOTBALL/teams").header("Authorization", "Bearer " + token))
                 .andExpect(status().isBadRequest());
     }
 
@@ -165,7 +174,7 @@ class SportsIntegrationTest {
                 .andExpect(status().isNotFound());
         mockMvc.perform(post("/api/sports/teams").header("Authorization", "Bearer " + f.token())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"league\": \"NFL\", \"providerTeamId\": \"24\"}"))
+                        .content("{\"league\": \"COLLEGE_FOOTBALL\", \"providerTeamId\": \"21\"}"))
                 .andExpect(status().isBadRequest());
     }
 
@@ -200,7 +209,9 @@ class SportsIntegrationTest {
                 game("g-live", now.minus(1, ChronoUnit.HOURS), GameState.LIVE, 3, 2, "Bottom 7th")));
         livePoller.refresh();
 
-        verify(mlb).games(eq(SportsLeague.MLB), eq(List.of("g-live")));
+        verify(mlb).games(eq(SportsLeague.MLB), argThat(known -> known.size() == 1
+                && known.iterator().next().id().equals("g-live")
+                && known.iterator().next().away().score() == 1));
         mockMvc.perform(get("/api/sports/live").header("Authorization", "Bearer " + f.token()))
                 .andExpect(jsonPath("$.data[0].away.score").value(3))
                 .andExpect(jsonPath("$.data[0].detail").value("Bottom 7th"));
@@ -212,9 +223,67 @@ class SportsIntegrationTest {
         mockMvc.perform(get("/api/sports/live").header("Authorization", "Bearer " + f.token()))
                 .andExpect(jsonPath("$.data", hasSize(0)));
         reset(mlb);
-        given(mlb.leagues()).willReturn(Set.of(SportsLeague.MLB));
+        stubLiveScores();
         livePoller.refresh();
         verify(mlb, never()).games(any(), anyCollection());
+    }
+
+    @Test
+    void leaguesWithoutLiveScoresStayOutOfTheLiveChipAndAreNeverPolled() throws Exception {
+        Registered f = register();
+        follow(f, "135");
+        given(mlb.liveScores(SportsLeague.MLB)).willReturn(false);
+
+        // The game is still on the calendar, as the schedule last gave it...
+        mockMvc.perform(get("/api/sports/games").header("Authorization", "Bearer " + f.token())
+                        .param("from", now.minus(2, ChronoUnit.DAYS).toString().substring(0, 10))
+                        .param("to", now.plus(3, ChronoUnit.DAYS).toString().substring(0, 10)))
+                .andExpect(jsonPath("$.data[?(@.providerGameId == 'g-live')]", hasSize(1)));
+        // ...but nothing claims to be live, and nobody asks the source.
+        mockMvc.perform(get("/api/sports/live").header("Authorization", "Bearer " + f.token()))
+                .andExpect(jsonPath("$.data", hasSize(0)));
+        livePoller.refresh();
+        verify(mlb, never()).games(any(), anyCollection());
+    }
+
+    @Test
+    void aSourceWithADailyQuotaIsAskedOnlyAsOftenAsItAllows() throws Exception {
+        Registered f = register();
+        follow(f, "135");
+        given(mlb.games(eq(SportsLeague.MLB), anyCollection())).willReturn(List.of(
+                game("g-live", now.minus(1, ChronoUnit.HOURS), GameState.LIVE, 3, 2, "Bottom 7th")));
+
+        livePoller.refresh();
+        given(mlb.liveRefreshInterval(SportsLeague.MLB)).willReturn(Duration.ofHours(1));
+        livePoller.refresh();
+        livePoller.refresh();
+        verify(mlb, times(1)).games(eq(SportsLeague.MLB), anyCollection());
+
+        given(mlb.liveRefreshInterval(SportsLeague.MLB)).willReturn(Duration.ZERO);
+        livePoller.refresh();
+        verify(mlb, times(2)).games(eq(SportsLeague.MLB), anyCollection());
+    }
+
+    @Test
+    void aFinalScoreIsNotUndoneByAScheduleThatHasNotCaughtUp() throws Exception {
+        Registered f = register();
+        follow(f, "135");
+        given(mlb.games(eq(SportsLeague.MLB), anyCollection())).willReturn(List.of(
+                game("g-live", now.minus(1, ChronoUnit.HOURS), GameState.FINAL, 3, 4, "Final")));
+        livePoller.refresh();
+
+        // The schedule source (nflverse, say) still lists the game as not yet played.
+        given(mlb.schedule(eq(SportsLeague.MLB), eq("135"), any(), any())).willReturn(List.of(
+                game("g-live", now.minus(1, ChronoUnit.HOURS), GameState.SCHEDULED, null, null, null)));
+        livePoller.syncAll();
+
+        mockMvc.perform(get("/api/sports/games").header("Authorization", "Bearer " + f.token())
+                        .param("from", now.minus(2, ChronoUnit.DAYS).toString().substring(0, 10))
+                        .param("to", now.plus(3, ChronoUnit.DAYS).toString().substring(0, 10)))
+                .andExpect(jsonPath("$.data[?(@.providerGameId == 'g-live')].state").value("FINAL"))
+                .andExpect(jsonPath("$.data[?(@.providerGameId == 'g-live')].away.score").value(3))
+                .andExpect(jsonPath("$.data[?(@.providerGameId == 'g-live')].home.score").value(4))
+                .andExpect(jsonPath("$.data[?(@.providerGameId == 'g-live')].detail").value("Final"));
     }
 
     @Test
@@ -271,6 +340,13 @@ class SportsIntegrationTest {
     }
 
     // ------------------------------------------------------------- helpers
+
+    /** MLB's source has live scores and no quota, as the real one does. */
+    private void stubLiveScores() {
+        given(mlb.leagues()).willReturn(Set.of(SportsLeague.MLB));
+        given(mlb.liveScores(SportsLeague.MLB)).willReturn(true);
+        given(mlb.liveRefreshInterval(SportsLeague.MLB)).willReturn(Duration.ZERO);
+    }
 
     private record Registered(String token, String memberId) {}
 

@@ -35,6 +35,11 @@ security:
 sports:
   mlb-base-url: ${SPORTS_MLB_BASE_URL:https://statsapi.mlb.com}
   live-poll-interval: ${SPORTS_LIVE_POLL_INTERVAL:PT30S}
+  # College football and men's basketball need a free CollegeFootballData key; NFL
+  # games come from nflverse with no key. Live NFL and college football scores need a
+  # BigBalls key; without one those games still show, with final scores.
+  cfbd-api-key: ${CFBD_API_KEY:}
+  bigballs-api-key: ${BIGBALLS_API_KEY:}
   schedule-cron: ${SPORTS_SCHEDULE_CRON:0 30 4 * * *}
 
 # Where screensaver photos are stored. A family picks its folder in the app, but only

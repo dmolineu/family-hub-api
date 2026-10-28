@@ -1,0 +1,11 @@
+[
+  {"id": 401002, "season": 2026, "week": 9, "seasonType": "regular", "startTime": "2026-10-25T03:00:00.000Z",
+   "isStartTimeTBD": false, "homeTeam": "Nevada", "homeConference": "Mountain West", "awayTeam": "San Diego State",
+   "awayConference": "Mountain West", "mediaType": "tv", "outlet": "Example Sports Network"},
+  {"id": 401002, "season": 2026, "week": 9, "seasonType": "regular", "startTime": "2026-10-25T03:00:00.000Z",
+   "isStartTimeTBD": false, "homeTeam": "Nevada", "homeConference": "Mountain West", "awayTeam": "San Diego State",
+   "awayConference": "Mountain West", "mediaType": "tv", "outlet": "Example Sports Network"},
+  {"id": 401003, "season": 2026, "week": 10, "seasonType": "regular", "startTime": "2026-11-01T07:00:00.000Z",
+   "isStartTimeTBD": true, "homeTeam": "San Diego State", "homeConference": "Mountain West", "awayTeam": "San Diego",
+   "awayConference": "Pioneer", "mediaType": "tv", "outlet": "EXTV"}
+]

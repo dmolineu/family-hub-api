@@ -16,6 +16,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * MLB's official Stats API ({@code statsapi.mlb.com}): its terms allow individual,
@@ -83,13 +84,14 @@ public class MlbStatsApiProvider implements SportsDataProvider {
     }
 
     @Override
-    public List<ProviderGame> games(SportsLeague league, Collection<String> gameIds) {
-        if (gameIds.isEmpty()) {
+    public List<ProviderGame> games(SportsLeague league, Collection<ProviderGame> known) {
+        if (known.isEmpty()) {
             return List.of();
         }
+        String gameIds = known.stream().map(ProviderGame::id).distinct().collect(Collectors.joining(","));
         return games(restClient.get()
                 .uri(properties.getMlbBaseUrl() + "/api/v1/schedule?sportId=1&gamePks={ids}&hydrate={hydrate}",
-                        String.join(",", gameIds), "linescore,team")
+                        gameIds, "linescore,team")
                 .retrieve()
                 .body(JsonNode.class));
     }

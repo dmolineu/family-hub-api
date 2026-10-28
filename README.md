@@ -28,8 +28,12 @@
 >   parent's PIN approves (a `REDEEMED` line spends them in the points log) or declines.
 > - Followed teams (`/api/sports`): a family follows teams, whose games go on the calendar
 >   in their fans' lanes (never into Google Calendar) with live scores while a game is on.
->   Sources sit behind `SportsDataProvider`; MLB's official Stats API is the first. Live
->   scores refresh every 30 s only while a followed game is on, one request for all devices.
+>   Sources sit behind `SportsDataProvider`: MLB's official Stats API; nflverse's open data
+>   for the NFL (CC BY 4.0, no key); CollegeFootballData and its basketball twin for college
+>   football and men's basketball (one free key); live NFL and college football scores from
+>   BigBalls (a free key, 250 requests a day, so every 3 min). Live scores refresh only while
+>   a followed game is on, one request for all devices; a league without them (college
+>   basketball, or a missing key) still shows its games and final scores, but not live.
 > - A folder of photos the family already has (`/api/photos/source`, under the same
 >   roots as photo storage) joins the slideshow: indexed in the background and daily,
 >   skipping hidden and `@eaDir`-style folders, served shrunk to 1920 px and turned upright
@@ -120,6 +124,8 @@ Configuration is supplied via environment variables. The `dev` profile is active
 | `GOOGLE_REDIRECT_URI` / `GOOGLE_FRONTEND_REDIRECT` | — | OAuth redirect overrides |
 | `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` | prod | PostgreSQL connection (`prod` profile) |
 | `CORS_ALLOWED_ORIGINS` | prod | Comma-separated origins (dev defaults to `localhost:5173,localhost:3000`) |
+| `CFBD_API_KEY` | — | CollegeFootballData key (free, collegefootballdata.com/key); without it college sports have no source |
+| `BIGBALLS_API_KEY` | — | BigBalls key (free plan, football); without it NFL and college football games show without live scores |
 
 Activate the production profile with `SPRING_PROFILES_ACTIVE=prod` (or `--spring.profiles.active=prod`).
 

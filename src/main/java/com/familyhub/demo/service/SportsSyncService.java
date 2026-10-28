@@ -5,6 +5,7 @@ import com.familyhub.demo.model.FollowedTeam;
 import com.familyhub.demo.model.SportsGame;
 import com.familyhub.demo.repository.FollowedTeamRepository;
 import com.familyhub.demo.repository.SportsGameRepository;
+import com.familyhub.demo.sports.GameSide;
 import com.familyhub.demo.sports.GameState;
 import com.familyhub.demo.sports.ProviderGame;
 import com.familyhub.demo.sports.SportsDataProvider;
@@ -23,8 +24,9 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.TreeSet;
+import java.util.TreeMap;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -43,6 +45,8 @@ public class SportsSyncService {
     private final SportsProviders providers;
     private final SportsProperties properties;
     private final Clock clock;
+    /** When each league's source was last asked for live scores, to keep to its pace. */
+    private final Map<SportsLeague, Instant> lastLiveRefresh = new ConcurrentHashMap<>();
 
     /**
      * Reads one team's schedule. A failure (the source is down, say) is logged and
@@ -77,22 +81,31 @@ public class SportsSyncService {
     /**
      * Refreshes games that are live or about to start, in any family: one provider
      * request per league, and nothing at all when no followed game is in its window.
+     * A league whose source has no live scores is skipped (its final scores come with
+     * the daily schedule), and a source with a daily quota is asked no more often than
+     * it allows.
      */
     @Transactional
     public void refreshLive() {
         Instant now = Instant.now(clock);
         List<SportsGame> open = sportsGameRepository.findByStateInAndStartAtGreaterThanEqualAndStartAtLessThan(
                 OPEN, now.minus(properties.getLiveWindowAfter()), now.plus(properties.getLiveWindowBefore()));
-        Map<SportsLeague, TreeSet<String>> idsByLeague = open.stream().collect(Collectors.groupingBy(
-                SportsGame::getLeague, Collectors.mapping(SportsGame::getProviderGameId,
-                        Collectors.toCollection(TreeSet::new))));
-        idsByLeague.forEach((league, ids) -> {
+        // Each game once per league, though several families may follow it.
+        Map<SportsLeague, TreeMap<String, ProviderGame>> knownByLeague = open.stream().collect(Collectors.groupingBy(
+                SportsGame::getLeague, Collectors.toMap(SportsGame::getProviderGameId, SportsSyncService::known,
+                        (first, second) -> first, TreeMap::new)));
+        knownByLeague.forEach((league, known) -> {
             Optional<SportsDataProvider> provider = providers.forLeague(league);
-            if (provider.isEmpty()) {
+            if (provider.isEmpty() || !provider.get().liveScores(league)) {
                 return;
             }
+            Instant last = lastLiveRefresh.get(league);
+            if (last != null && now.isBefore(last.plus(provider.get().liveRefreshInterval(league)))) {
+                return;
+            }
+            lastLiveRefresh.put(league, now);
             try {
-                for (ProviderGame game : provider.get().games(league, List.copyOf(ids))) {
+                for (ProviderGame game : provider.get().games(league, List.copyOf(known.values()))) {
                     for (SportsGame cached : sportsGameRepository.findByLeagueAndProviderGameId(league, game.id())) {
                         apply(cached, game, now);
                     }
@@ -129,22 +142,44 @@ public class SportsSyncService {
                 games.size());
     }
 
+    /** A cached game as its provider would describe it. */
+    private static ProviderGame known(SportsGame game) {
+        return new ProviderGame(
+                game.getProviderGameId(),
+                game.getLeague(),
+                game.getStartAt(),
+                game.isTimeTbd(),
+                new GameSide(game.getHomeTeamId(), game.getHomeName(), game.getHomeAbbreviation(), game.getHomeScore()),
+                new GameSide(game.getAwayTeamId(), game.getAwayName(), game.getAwayAbbreviation(), game.getAwayScore()),
+                game.getVenue(),
+                game.getBroadcasts() == null ? List.of() : List.of(game.getBroadcasts().split("\n")),
+                game.getState(),
+                game.getDetail());
+    }
+
     private void apply(SportsGame cached, ProviderGame game, Instant now) {
+        // A live source can report a final score before the schedule source has it
+        // (nflverse takes up to a day), so a schedule that has not caught up never
+        // reopens a finished game.
+        boolean behind = cached.getState() == GameState.FINAL && game.state() == GameState.SCHEDULED
+                && game.home().score() == null && game.away().score() == null;
         cached.setStartAt(game.startAt());
         cached.setTimeTbd(game.timeTbd());
         cached.setHomeTeamId(game.home().teamId());
         cached.setHomeName(game.home().name());
         cached.setHomeAbbreviation(game.home().abbreviation());
-        cached.setHomeScore(game.home().score());
         cached.setAwayTeamId(game.away().teamId());
         cached.setAwayName(game.away().name());
         cached.setAwayAbbreviation(game.away().abbreviation());
-        cached.setAwayScore(game.away().score());
         cached.setVenue(game.venue());
         cached.setBroadcasts(game.broadcasts() == null || game.broadcasts().isEmpty()
                 ? null : String.join("\n", game.broadcasts()));
-        cached.setState(game.state());
-        cached.setDetail(game.detail());
+        if (!behind) {
+            cached.setHomeScore(game.home().score());
+            cached.setAwayScore(game.away().score());
+            cached.setState(game.state());
+            cached.setDetail(game.detail());
+        }
         cached.setUpdatedAt(now);
         sportsGameRepository.save(cached);
     }

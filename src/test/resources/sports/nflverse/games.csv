@@ -1,0 +1,7 @@
+game_id,season,game_type,week,gameday,weekday,gametime,away_team,away_score,home_team,home_score,location,overtime,stadium
+2025_18_LAC_KC,2025,REG,18,2026-01-04,Sunday,16:25,LAC,20,KC,23,Home,0,Example Arena
+2026_07_KC_LAC,2026,REG,7,2026-10-25,Sunday,16:05,KC,27,LAC,30,Home,1,Example Bowl
+2026_08_LAC_DEN,2026,REG,8,2026-11-01,Sunday,16:25,LAC,,DEN,,Home,,Example Field
+2026_09_LV_LAC,2026,REG,9,2026-11-08,Sunday,09:30,LV,,LAC,,Neutral,,"Example Stadium, Abroad"
+2026_10_DEN_KC,2026,REG,10,2026-11-15,Sunday,13:00,DEN,,KC,,Home,,Example Arena
+2026_17_LAC_LV,2026,REG,17,2026-12-31,Thursday,,LAC,,LV,,Home,,Example Dome

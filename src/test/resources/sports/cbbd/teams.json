@@ -1,0 +1,10 @@
+[
+  {"id": 301, "sourceId": "21", "school": "San Diego State", "mascot": "Aztecs", "abbreviation": "SDSU",
+   "displayName": "San Diego State Aztecs", "shortDisplayName": "San Diego St", "primaryColor": "000010",
+   "secondaryColor": "000011", "currentVenueId": 1, "currentVenue": "Example Arena", "currentCity": "San Diego",
+   "currentState": "CA", "conferenceId": 9, "conference": "MWC", "logos": ["https://logos.example/cbb-301.png"]},
+  {"id": 302, "sourceId": "2250", "school": "Gonzaga", "mascot": "Bulldogs", "abbreviation": "GONZ",
+   "displayName": null, "shortDisplayName": null, "primaryColor": null, "secondaryColor": null,
+   "currentVenueId": null, "currentVenue": null, "currentCity": null, "currentState": null,
+   "conferenceId": null, "conference": "WCC", "logos": null}
+]

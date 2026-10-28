@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -48,10 +49,14 @@ public class SportsTeamService {
     private final SportsProviders providers;
     private final SportsTeamCatalog catalog;
 
-    /** Every league, and whether a data source covers it yet. */
+    /** Every league, whether a data source covers it yet, and whether that source has live scores. */
     public List<SportsLeagueResponse> leagues() {
         return Arrays.stream(SportsLeague.values())
-                .map(l -> new SportsLeagueResponse(l, l.displayName(), providers.forLeague(l).isPresent()))
+                .map(l -> {
+                    Optional<SportsDataProvider> provider = providers.forLeague(l);
+                    return new SportsLeagueResponse(l, l.displayName(), provider.isPresent(),
+                            provider.map(p -> p.liveScores(l)).orElse(false));
+                })
                 .toList();
     }
 

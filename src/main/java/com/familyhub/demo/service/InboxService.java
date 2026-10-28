@@ -3,7 +3,10 @@ package com.familyhub.demo.service;
 import com.familyhub.demo.config.InboxProperties;
 import com.familyhub.demo.dto.CalendarEventRequest;
 import com.familyhub.demo.dto.CalendarEventResponse;
+import com.familyhub.demo.dto.CreateRecipeRequest;
+import com.familyhub.demo.dto.ImportRecipeRequest;
 import com.familyhub.demo.dto.PhotoResponse;
+import com.familyhub.demo.dto.RecipeDetailResponse;
 import com.familyhub.demo.inbox.MailContent;
 import com.familyhub.demo.inbox.MailReader;
 import com.familyhub.demo.inbox.MailReaderException;
@@ -84,13 +87,15 @@ public class InboxService {
     private final MailReader reader;
     private final ReplySender replies;
     private final CalendarEventService calendarEvents;
+    private final RecipeService recipes;
     private final ObjectMapper json;
     private final Clock clock;
 
     public InboxService(InboxProperties properties, InboxMessageRepository messages, InboxSenderRepository senders,
                         InboxImportRepository imports, FamilyMemberRepository members, PhotoService photoService,
                         PictureShrinker shrinker, HeicDecoder heicDecoder, MailReader reader, ReplySender replies,
-                        CalendarEventService calendarEvents, ObjectMapper json, Clock clock) {
+                        CalendarEventService calendarEvents, RecipeService recipes, ObjectMapper json,
+                        Clock clock) {
         this.properties = properties;
         this.messages = messages;
         this.senders = senders;
@@ -103,6 +108,7 @@ public class InboxService {
         this.reader = reader;
         this.replies = replies;
         this.calendarEvents = calendarEvents;
+        this.recipes = recipes;
         this.json = json;
         this.clock = clock;
     }
@@ -154,7 +160,8 @@ public class InboxService {
             }
             return switch (reading.kind()) {
                 case EVENTS -> addEvents(family, mail, reading);
-                case RECIPE, NOTHING -> nothingToAdd(family, mail, reading);
+                case RECIPE -> addRecipe(family, mail, reading);
+                case NOTHING -> nothingToAdd(family, mail, reading);
             };
         } catch (RuntimeException e) {
             log.warn("Inbox message failed, familyId={}: {}", family.getId(), e.toString());
@@ -275,6 +282,62 @@ public class InboxService {
         return properties.getProcessedLabel();
     }
 
+    /**
+     * A recipe joins the library: from its page when the email links one (the app's own
+     * importer, which respects sites that refuse it), else from what the email itself
+     * says. The sender is told, and can reply UNDO.
+     */
+    private String addRecipe(Family family, ReceivedMail mail, MailReading reading) {
+        MailReading.ReadRecipe found = reading.recipe();
+        String url = found.sourceUrl() == null ? "" : found.sourceUrl().strip();
+        RecipeDetailResponse saved = null;
+        if (!url.isEmpty()) {
+            try {
+                saved = recipes.importRecipe(new ImportRecipeRequest(url), family);
+            } catch (RuntimeException e) {
+                log.info("Inbox recipe page not read, familyId={}: {}", family.getId(), e.getMessage());
+            }
+        }
+        if (saved == null && found.title() != null && !found.title().isBlank()
+                && found.ingredients() != null && !found.ingredients().isEmpty()) {
+            try {
+                saved = recipes.createRecipe(new CreateRecipeRequest(truncate(found.title().strip(), 160), null,
+                        cleaned(found.ingredients(), 500, 100), cleaned(found.steps(), 4000, 100),
+                        truncate("From an email: " + mail.subject()
+                                + (found.servings() == null || found.servings().isBlank() ? ""
+                                : ". Serves " + found.servings().strip()), 2000),
+                        url.startsWith("http://") || url.startsWith("https://") ? url : null,
+                        cleaned(found.tags(), 60, 10), false), family);
+            } catch (RuntimeException e) {
+                log.info("Inbox recipe not saved, familyId={}: {}", family.getId(), e.getMessage());
+            }
+        }
+        if (saved == null) {
+            InboxMessage message = record(family, mail, InboxOutcome.UNPROCESSED, "A recipe that could not be read");
+            message.setReplyMessageId(sendReply(family, mail, "Hi from the Family Hub. I could not read the recipe"
+                    + " in \"" + mail.subject() + "\"" + (url.isEmpty() ? "" : " (" + url + ")")
+                    + ". Some sites do not let other apps read their pages; pasting the ingredients and steps into"
+                    + " an email works instead.\n", false));
+            messages.save(message);
+            return properties.getUnprocessedLabel();
+        }
+        InboxMessage message = record(family, mail, InboxOutcome.RECIPE, saved.title());
+        InboxImport added = newImport(family, message, InboxImportKind.RECIPE, saved.title());
+        added.setRecipeId(saved.id());
+        imports.save(added);
+        message.setReplyMessageId(sendReply(family, mail, "Hi from the Family Hub. Added to the recipe library: "
+                + saved.title() + ".\n\nReply UNDO to this email to take it out again.\n", false));
+        messages.save(message);
+        log.info("Inbox recipe added, familyId={}, recipeId={}", family.getId(), saved.id());
+        return properties.getProcessedLabel();
+    }
+
+    /** Non-blank items, each at most {@code length} characters, at most {@code count} of them. */
+    private static List<String> cleaned(List<String> items, int length, int count) {
+        return items == null ? List.of() : items.stream().filter(Objects::nonNull).map(String::strip)
+                .filter(item -> !item.isEmpty()).map(item -> truncate(item, length)).limit(count).toList();
+    }
+
     private String nothingToAdd(Family family, ReceivedMail mail, MailReading reading) {
         InboxMessage message = record(family, mail, InboxOutcome.UNPROCESSED, reading.summary());
         message.setReplyMessageId(sendReply(family, mail, "Hi from the Family Hub. I read \"" + mail.subject()
@@ -302,6 +365,8 @@ public class InboxService {
                     calendarEvents.deleteCalendarEvent(added.getCalendarEventId(), family);
                 } else if (added.getKind() == InboxImportKind.PHOTO && added.getPhotoId() != null) {
                     photoService.delete(family, added.getPhotoId());
+                } else if (added.getKind() == InboxImportKind.RECIPE && added.getRecipeId() != null) {
+                    recipes.deleteRecipe(added.getRecipeId(), family);
                 }
             } catch (RuntimeException e) {
                 // Already removed by hand: nothing left to take off.
@@ -315,7 +380,7 @@ public class InboxService {
         InboxMessage message = record(family, mail, InboxOutcome.UNDO, takenOff.size() + " taken off");
         String text = takenOff.isEmpty()
                 ? "Hi from the Family Hub. There was nothing left to take off.\n"
-                : "Hi from the Family Hub. Taken off the calendar:\n" + String.join("\n",
+                : "Hi from the Family Hub. Taken off again:\n" + String.join("\n",
                 takenOff.stream().map(title -> "  - " + title).toList()) + "\n";
         message.setReplyMessageId(sendReply(family, mail, text, true));
         messages.save(message);

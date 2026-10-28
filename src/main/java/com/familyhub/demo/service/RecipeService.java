@@ -39,6 +39,17 @@ public class RecipeService {
         return RecipeMapper.toDetailDto(getRecipeOrThrow(id, family));
     }
 
+    /**
+     * Deletes one of the family's recipes (the family inbox's undo). Meals planned with
+     * it keep their place; their link to the recipe is cleared by the database.
+     *
+     * @throws ResourceNotFoundException for a recipe that is not the family's (404)
+     */
+    @Transactional
+    public void deleteRecipe(UUID id, Family family) {
+        recipeRepository.delete(getRecipeOrThrow(id, family));
+    }
+
     @Transactional
     public RecipeDetailResponse createRecipe(CreateRecipeRequest request, Family family) {
         Recipe recipe = new Recipe();

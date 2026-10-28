@@ -355,7 +355,63 @@ class FamilyInboxIntegrationTest {
         assertThat(eventTitles("2027-05-01", "2027-05-31")).contains("Recital");
     }
 
+    @Test
+    void aRecipeInAnEmailJoinsTheLibraryAndUndoTakesItOut() throws Exception {
+        ScriptedReader.NEXT.set(recipe("Lemon chicken traybake", "",
+                List.of("4 chicken thighs", "2 lemons", "1 tbsp olive oil"),
+                List.of("Heat the oven to 200C.", "Roast everything for 40 minutes.")));
+        hub.deliver(mail(DAD, GMAIL_VERIFIED, "<recipe-1@example.com>", "Try this #recipe",
+                "Grandma's lemon chicken: 4 chicken thighs, 2 lemons..."));
+
+        poller.pollNow();
+
+        assertThat(recipeTitles()).contains("Lemon chicken traybake");
+        MimeMessage reply = latestReplyTo(DAD);
+        assertThat(GreenMailUtil.getBody(reply)).contains("Lemon chicken traybake").contains("UNDO");
+
+        hub.deliver(replyingTo(reply.getMessageID(), DAD, GMAIL_VERIFIED, "<recipe-undo@example.com>",
+                "Re: Try this", "undo"));
+        poller.pollNow();
+        assertThat(recipeTitles()).doesNotContain("Lemon chicken traybake");
+    }
+
+    @Test
+    void aRecipeLinkThatCannotBeReadFallsBackToWhatTheEmailSaid() throws Exception {
+        // .invalid never resolves, so the page import fails as a blocked site's would.
+        ScriptedReader.NEXT.set(recipe("Pancakes", "https://recipes.invalid/pancakes",
+                List.of("1 cup flour", "1 egg", "1 cup milk"), List.of("Whisk.", "Fry.")));
+        hub.deliver(mail(DAD, GMAIL_VERIFIED, "<recipe-2@example.com>", "Pancakes",
+                "https://recipes.invalid/pancakes - 1 cup flour, 1 egg, 1 cup milk"));
+
+        poller.pollNow();
+
+        assertThat(recipeTitles()).contains("Pancakes");
+    }
+
+    @Test
+    void aRecipeLinkWithNothingElseToGoOnIsSetAsideAndTheSenderTold() throws Exception {
+        ScriptedReader.NEXT.set(recipe("", "https://recipes.invalid/soup", List.of(), List.of()));
+        hub.deliver(mail(DAD, GMAIL_VERIFIED, "<recipe-3@example.com>", "Soup",
+                "https://recipes.invalid/soup"));
+
+        poller.pollNow();
+
+        assertThat(count("FamilyHub-Unprocessed")).isEqualTo(1);
+        assertThat(GreenMailUtil.getBody(latestReplyTo(DAD))).containsIgnoringCase("could not read the recipe");
+    }
+
     // ------------------------------------------------------------- helpers
+
+    private static MailReading recipe(String title, String url, List<String> ingredients, List<String> steps) {
+        return new MailReading(MailReading.Kind.RECIPE, List.of(),
+                new MailReading.ReadRecipe(title, "4", ingredients, steps, List.of("dinner"), url), "A recipe");
+    }
+
+    private List<String> recipeTitles() throws Exception {
+        return JsonPath.read(mockMvc.perform(get("/api/recipes").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(), "$.data[*].title");
+    }
 
     private static MailReading events(MailReading.ReadEvent... events) {
         return new MailReading(MailReading.Kind.EVENTS, List.of(events), emptyRecipe(), "A flyer");

@@ -16,6 +16,8 @@
 >   character from an avatar pack, stored on the member as a PNG/JPEG/WebP data URL of at
 >   most 64 KB (checked by its bytes). Avatar packs are family data at `/api/avatar-packs`
 >   and travel in backups; their content stays private and is never part of this repo.
+> - Five wrong sign-in passwords for a username within 15 minutes lock it for 15 minutes
+>   (429 saying how long is left); the server's `reset-password` still works.
 > - A rewards shop (`/api/rewards`): parents keep a catalogue priced in chore points with
 >   their own PIN; anyone asks for a reward they can afford, which holds the points; a
 >   parent's PIN approves (a `REDEEMED` line spends them in the points log) or declines.

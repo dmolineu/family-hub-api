@@ -13,6 +13,7 @@ import com.familyhub.demo.mapper.FamilyMapper;
 import com.familyhub.demo.mapper.FamilyMemberMapper;
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.repository.FamilyRepository;
+import com.familyhub.demo.security.LoginAttemptLimiter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
@@ -33,6 +34,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final ListSeedService listSeedService;
     private final RecipeSeedService recipeSeedService;
+    private final LoginAttemptLimiter loginAttemptLimiter;
 
     @Transactional
     public AuthResponse register(RegisterRequest registerRequest) {
@@ -67,12 +69,16 @@ public class AuthService {
 
     @Transactional
     public AuthResponse login(LoginRequest loginRequest) {
+        // Checked first, so a locked username costs no password hashing either.
+        loginAttemptLimiter.checkAllowed(loginRequest.username());
         Family family = familyRepository.findByUsername(loginRequest.username())
                 .orElse(null);
 
         if (family == null || !passwordEncoder.matches(loginRequest.password(), family.getPassword())) {
+            loginAttemptLimiter.recordFailure(loginRequest.username());
             throw new InvalidCredentialException("Invalid username or password.");
         }
+        loginAttemptLimiter.recordSuccess(loginRequest.username());
 
         String token = jwtService.generateToken(family);
         log.info("Family logged in, familyId={}, username={}", family.getId(), family.getUsername());

@@ -13,6 +13,8 @@ import com.familyhub.demo.model.Family;
 import com.familyhub.demo.repository.FamilyRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import com.familyhub.demo.exception.TooManyAttemptsException;
+import com.familyhub.demo.security.LoginAttemptLimiter;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -50,6 +52,9 @@ class AuthServiceTest {
 
     @Mock
     private RecipeSeedService recipeSeedService;
+
+    @Mock
+    private LoginAttemptLimiter loginAttemptLimiter;
 
     @InjectMocks
     private AuthService authService;
@@ -205,6 +210,30 @@ class AuthServiceTest {
 
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(InvalidCredentialException.class);
+    }
+
+    @Test
+    void login_countsAWrongPasswordAndClearsTheCountOnARightOne() {
+        LoginRequest request = createLoginRequest();
+        when(familyRepository.findByUsername(request.username())).thenReturn(Optional.of(family));
+        when(passwordEncoder.matches(request.password(), family.getPassword())).thenReturn(false, true);
+        when(jwtService.generateToken(family)).thenReturn("jwt-token");
+
+        assertThatThrownBy(() -> authService.login(request)).isInstanceOf(InvalidCredentialException.class);
+        verify(loginAttemptLimiter).recordFailure(request.username());
+
+        authService.login(request);
+        verify(loginAttemptLimiter).recordSuccess(request.username());
+    }
+
+    @Test
+    void login_whileLocked_refusesWithoutCheckingThePassword() {
+        LoginRequest request = createLoginRequest();
+        org.mockito.Mockito.doThrow(new TooManyAttemptsException("Too many wrong passwords."))
+                .when(loginAttemptLimiter).checkAllowed(request.username());
+
+        assertThatThrownBy(() -> authService.login(request)).isInstanceOf(TooManyAttemptsException.class);
+        verify(passwordEncoder, never()).matches(any(), any());
     }
 
     @Test

@@ -70,6 +70,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return buildErrorResponse(HttpStatus.FORBIDDEN, request, ex.getMessage());
     }
 
+    @ExceptionHandler(TooManyAttemptsException.class)
+    public ResponseEntity<ErrorResponse> handleTooManyAttempts(TooManyAttemptsException ex, HttpServletRequest request) {
+        log.warn("Sign-in locked: {} {}", request.getMethod(), request.getRequestURI());
+        return buildErrorResponse(HttpStatus.TOO_MANY_REQUESTS, request, ex.getMessage());
+    }
+
     @ExceptionHandler(ServiceUnavailableException.class)
     public ResponseEntity<ErrorResponse> handleServiceUnavailable(ServiceUnavailableException ex, HttpServletRequest request) {
         log.warn("Upstream unavailable: {} {}, message={}", request.getMethod(), request.getRequestURI(), ex.getMessage(), ex);

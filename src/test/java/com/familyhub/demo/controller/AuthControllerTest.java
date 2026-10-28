@@ -175,6 +175,18 @@ class AuthControllerTest {
     }
 
     @Test
+    void login_tooManyWrongPasswords_returns429WithTheWayOut() throws Exception {
+        given(authService.login(any())).willThrow(new com.familyhub.demo.exception.TooManyAttemptsException(
+                "Too many wrong passwords. Try again in 15 minutes."));
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\": \"molineus\", \"password\": \"wrong-password\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.message").value("Too many wrong passwords. Try again in 15 minutes."));
+    }
+
+    @Test
     void login_invalidCredentials_returns401() throws Exception {
         given(authService.login(any())).willThrow(new InvalidCredentialException("Invalid credentials"));
 

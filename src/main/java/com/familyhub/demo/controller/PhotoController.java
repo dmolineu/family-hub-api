@@ -1,6 +1,7 @@
 package com.familyhub.demo.controller;
 
 import com.familyhub.demo.dto.ApiResponse;
+import com.familyhub.demo.dto.PhotoFolderListingResponse;
 import com.familyhub.demo.dto.PhotoFolderRequest;
 import com.familyhub.demo.dto.PhotoResponse;
 import com.familyhub.demo.dto.PhotoStorageResponse;
@@ -10,6 +11,7 @@ import com.familyhub.demo.dto.PhotoSourceResponse;
 import com.familyhub.demo.dto.PhotoSourceRequest;
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.model.FamilyPhoto;
+import com.familyhub.demo.service.PhotoFolderBrowser;
 import com.familyhub.demo.service.PhotoService;
 import com.familyhub.demo.service.PhotoStorageService;
 import jakarta.validation.Valid;
@@ -47,6 +49,7 @@ public class PhotoController {
     private final PhotoService photoService;
     private final PhotoStorageService photoStorageService;
     private final FolderPhotoService folderPhotoService;
+    private final PhotoFolderBrowser photoFolderBrowser;
 
     /** The family's photos, newest first. */
     @GetMapping
@@ -116,6 +119,17 @@ public class PhotoController {
                 .contentType(MediaType.IMAGE_JPEG)
                 .cacheControl(IMMUTABLE_PRIVATE)
                 .body(folderPhotoService.content(family, id));
+    }
+
+    /**
+     * The folders inside a folder under the photo roots (the roots themselves without
+     * one), for picking the photo folder by tapping through them.
+     */
+    @GetMapping("/folders")
+    public ResponseEntity<ApiResponse<PhotoFolderListingResponse>> folders(
+            @RequestParam(required = false) String path
+    ) {
+        return ResponseEntity.ok(new ApiResponse<>(photoFolderBrowser.list(path), ""));
     }
 
     /** Where the family's photos live and where they may go. */

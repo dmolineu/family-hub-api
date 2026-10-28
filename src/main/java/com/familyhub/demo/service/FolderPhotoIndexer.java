@@ -47,6 +47,24 @@ import java.util.stream.Collectors;
 public class FolderPhotoIndexer {
     private static final Set<String> PICTURES = Set.of("jpg", "jpeg", "png");
     private static final Set<String> HEIC = Set.of("heic", "heif");
+
+    /**
+     * Whether a folder is left out when reading or browsing a share: hidden folders and
+     * the ones NAS software adds (Synology's "@eaDir" thumbnails, "#recycle").
+     */
+    static boolean isSkippedFolder(String name) {
+        return name.startsWith(".") || name.startsWith("@") || name.startsWith("#");
+    }
+
+    /** Whether a file is a photo the slideshow takes: a JPEG, PNG or HEIC, not a hidden file. */
+    static boolean isPhotoFile(String name) {
+        if (name.startsWith(".")) {
+            return false;
+        }
+        int dot = name.lastIndexOf('.');
+        String extension = dot < 0 ? "" : name.substring(dot + 1).toLowerCase(Locale.ROOT);
+        return PICTURES.contains(extension) || HEIC.contains(extension);
+    }
     private static final int MAX_DEPTH = 32;
 
     private final FamilyRepository familyRepository;
@@ -144,8 +162,7 @@ public class FolderPhotoIndexer {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
                 String name = dir.getFileName() == null ? "" : dir.getFileName().toString();
-                boolean skipped = !dir.equals(root)
-                        && (name.startsWith(".") || name.startsWith("@") || name.startsWith("#"));
+                boolean skipped = !dir.equals(root) && isSkippedFolder(name);
                 return skipped ? FileVisitResult.SKIP_SUBTREE : FileVisitResult.CONTINUE;
             }
 

@@ -12,4 +12,6 @@ public interface InboxSenderRepository extends JpaRepository<InboxSender, UUID> 
     List<InboxSender> findByFamilyOrderByAddress(Family family);
 
     Optional<InboxSender> findByFamilyAndAddress(Family family, String address);
+
+    Optional<InboxSender> findByIdAndFamily(UUID id, Family family);
 }

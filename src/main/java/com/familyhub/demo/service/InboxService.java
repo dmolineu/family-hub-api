@@ -40,7 +40,6 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -67,10 +66,7 @@ public class InboxService {
     private static final Set<String> PICTURE_TYPES = Set.of("image/jpeg", "image/png", "image/heic", "image/heif");
     private static final int MAX_PHOTOS_PER_MESSAGE = 20;
     private static final int MAX_EVENTS_PER_MESSAGE = 40;
-    private static final Pattern TIME = Pattern.compile("^(1[0-2]|[1-9]):[0-5][0-9] (AM|PM)$");
-    private static final DateTimeFormatter TWELVE_HOUR = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH);
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("EEE, MMM d", Locale.ENGLISH);
-    private static final String ALL_DAY_TIME = "12:00 AM";
     /** Lines phones and mail apps add to every message, which are not the sender's words. */
     private static final Pattern SIGNATURE = Pattern.compile(
             "(?im)^\\s*(sent from my .*|sent from (yahoo )?mail.*|get outlook for .*|sent via .*)\\s*$");
@@ -88,14 +84,15 @@ public class InboxService {
     private final ReplySender replies;
     private final CalendarEventService calendarEvents;
     private final RecipeService recipes;
+    private final InboxReviewService review;
     private final ObjectMapper json;
     private final Clock clock;
 
     public InboxService(InboxProperties properties, InboxMessageRepository messages, InboxSenderRepository senders,
                         InboxImportRepository imports, FamilyMemberRepository members, PhotoService photoService,
                         PictureShrinker shrinker, HeicDecoder heicDecoder, MailReader reader, ReplySender replies,
-                        CalendarEventService calendarEvents, RecipeService recipes, ObjectMapper json,
-                        Clock clock) {
+                        CalendarEventService calendarEvents, RecipeService recipes, InboxReviewService review,
+                        ObjectMapper json, Clock clock) {
         this.properties = properties;
         this.messages = messages;
         this.senders = senders;
@@ -109,6 +106,7 @@ public class InboxService {
         this.replies = replies;
         this.calendarEvents = calendarEvents;
         this.recipes = recipes;
+        this.review = review;
         this.json = json;
         this.clock = clock;
     }
@@ -235,7 +233,8 @@ public class InboxService {
                 Math.min(MAX_EVENTS_PER_MESSAGE, reading.events().size()))) {
             InboxImport proposal = newImport(family, message, InboxImportKind.EVENT, event.title());
             proposal.setConfidence(event.confidence() == null ? null : event.confidence().name());
-            Optional<CalendarEventRequest> request = toRequest(event, familyMembers, mail);
+            Optional<CalendarEventRequest> request = InboxEventMapper.toRequest(event, familyMembers, mail.from(),
+                    mail.subject());
             boolean wasAdded = false;
             if (event.confidence() == MailReading.Confidence.HIGH && request.isPresent()) {
                 try {
@@ -360,20 +359,7 @@ public class InboxService {
             if (added.getStatus() != InboxImportStatus.ADDED) {
                 continue;
             }
-            try {
-                if (added.getKind() == InboxImportKind.EVENT && added.getCalendarEventId() != null) {
-                    calendarEvents.deleteCalendarEvent(added.getCalendarEventId(), family);
-                } else if (added.getKind() == InboxImportKind.PHOTO && added.getPhotoId() != null) {
-                    photoService.delete(family, added.getPhotoId());
-                } else if (added.getKind() == InboxImportKind.RECIPE && added.getRecipeId() != null) {
-                    recipes.deleteRecipe(added.getRecipeId(), family);
-                }
-            } catch (RuntimeException e) {
-                // Already removed by hand: nothing left to take off.
-                log.info("Inbox undo found it already gone, importId={}: {}", added.getId(), e.toString());
-            }
-            added.setStatus(InboxImportStatus.UNDONE);
-            added.setDecidedAt(Instant.now(clock));
+            review.takeOff(family, added);
             imports.save(added);
             takenOff.add(added.getTitle());
         }
@@ -405,61 +391,6 @@ public class InboxService {
             log.warn("Inbox reply not sent, familyId={}: {}", family.getId(), e.toString());
             return null;
         }
-    }
-
-    /** The calendar request for an event, if its date and times can be read. */
-    private Optional<CalendarEventRequest> toRequest(MailReading.ReadEvent event, List<FamilyMember> familyMembers,
-                                                     ReceivedMail mail) {
-        try {
-            String title = event.title() == null ? "" : event.title().strip();
-            if (title.isEmpty()) {
-                return Optional.empty();
-            }
-            LocalDate date = LocalDate.parse(event.date());
-            LocalDate endDate = event.allDay() && event.endDate() != null && !event.endDate().isBlank()
-                    ? LocalDate.parse(event.endDate()) : null;
-            String start = ALL_DAY_TIME;
-            String end = ALL_DAY_TIME;
-            if (!event.allDay()) {
-                if (event.startTime() == null || !TIME.matcher(event.startTime()).matches()) {
-                    return Optional.empty();
-                }
-                start = event.startTime();
-                end = event.endTime() != null && TIME.matcher(event.endTime()).matches() ? event.endTime()
-                        : LocalTime.parse(start, TWELVE_HOUR).plusHours(1).format(TWELVE_HOUR);
-                if (!LocalTime.parse(start, TWELVE_HOUR).isBefore(LocalTime.parse(end, TWELVE_HOUR))) {
-                    return Optional.empty();
-                }
-            }
-            FamilyMember member = memberFor(event, familyMembers, mail.from());
-            if (member == null) {
-                return Optional.empty();
-            }
-            String location = event.location() == null || event.location().isBlank() ? null
-                    : truncate(event.location().strip(), 255);
-            return Optional.of(new CalendarEventRequest(truncate(title, 100), start, end, date, member.getId(),
-                    event.allDay(), location, endDate, null, truncate("From an email: " + mail.subject(), 2000)));
-        } catch (DateTimeParseException e) {
-            return Optional.empty();
-        }
-    }
-
-    /** The first person named, else the sender, else a parent, else anyone in the family. */
-    private static FamilyMember memberFor(MailReading.ReadEvent event, List<FamilyMember> familyMembers, String from) {
-        if (event.people() != null) {
-            for (String name : event.people()) {
-                for (FamilyMember member : familyMembers) {
-                    if (member.getName() != null && member.getName().equalsIgnoreCase(name.strip())) {
-                        return member;
-                    }
-                }
-            }
-        }
-        return familyMembers.stream().filter(member -> member.getEmail() != null
-                        && member.getEmail().trim().equalsIgnoreCase(from)).findFirst()
-                .or(() -> familyMembers.stream().filter(member -> member.getRole() == MemberRole.PARENT).findFirst())
-                .or(() -> familyMembers.stream().findFirst())
-                .orElse(null);
     }
 
     private static String describe(MailReading.ReadEvent event, List<FamilyMember> familyMembers) {

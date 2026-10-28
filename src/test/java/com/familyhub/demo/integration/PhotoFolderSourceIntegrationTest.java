@@ -26,11 +26,19 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
@@ -58,6 +66,10 @@ class PhotoFolderSourceIntegrationTest {
     @TestConfiguration
     static class SwitchableHeicDecoder {
         static final AtomicBoolean AVAILABLE = new AtomicBoolean(false);
+        /** How long each decode takes, and how many ran at once at the most. */
+        static final AtomicLong DELAY_MS = new AtomicLong(0);
+        static final AtomicInteger IN_FLIGHT = new AtomicInteger(0);
+        static final AtomicInteger MAX_IN_FLIGHT = new AtomicInteger(0);
 
         @Bean
         @Primary
@@ -70,10 +82,14 @@ class PhotoFolderSourceIntegrationTest {
 
                 @Override
                 public byte[] toJpeg(Path heic) throws java.io.IOException {
+                    MAX_IN_FLIGHT.accumulateAndGet(IN_FLIGHT.incrementAndGet(), Math::max);
                     try {
+                        Thread.sleep(DELAY_MS.get());
                         return image("jpg", 3024, 4032);
                     } catch (Exception e) {
                         throw new java.io.IOException(e);
+                    } finally {
+                        IN_FLIGHT.decrementAndGet();
                     }
                 }
             };
@@ -83,6 +99,8 @@ class PhotoFolderSourceIntegrationTest {
     @AfterEach
     void noDecoder() {
         SwitchableHeicDecoder.AVAILABLE.set(false);
+        SwitchableHeicDecoder.DELAY_MS.set(0);
+        SwitchableHeicDecoder.MAX_IN_FLIGHT.set(0);
     }
 
     private static final String PASSWORD = "TestPassword123!";
@@ -272,6 +290,84 @@ class PhotoFolderSourceIntegrationTest {
     }
 
     @Test
+    void theFoldersPhotosAreListedNewestFirstAPageAtATimeWithThumbnails() throws Exception {
+        Family f = register();
+        Path folder = library();
+        Files.setLastModifiedTime(folder.resolve("beach.jpg"), FileTime.from(Instant.parse("2026-01-01T00:00:00Z")));
+        Files.setLastModifiedTime(folder.resolve("2026/summer/IMG_0002.PNG"),
+                FileTime.from(Instant.parse("2026-06-01T00:00:00Z")));
+        mockMvc.perform(put("/api/photos/source").header("Authorization", "Bearer " + f.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(source(f.parentId(), PIN, folder.toString())))
+                .andExpect(status().isAccepted());
+        awaitIndexed(f);
+
+        mockMvc.perform(get("/api/photos/folder/list").param("page", "0").param("size", "1")
+                        .header("Authorization", "Bearer " + f.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(2))
+                .andExpect(jsonPath("$.data.items", hasSize(1)))
+                .andExpect(jsonPath("$.data.items[0].name").value("IMG_0002.PNG"))
+                .andExpect(jsonPath("$.data.items[0].modifiedAt").value("2026-06-01T00:00:00Z"));
+        String second = mockMvc.perform(get("/api/photos/folder/list").param("page", "1").param("size", "1")
+                        .header("Authorization", "Bearer " + f.token()))
+                .andExpect(jsonPath("$.data.items", hasSize(1)))
+                .andExpect(jsonPath("$.data.items[0].name").value("beach.jpg"))
+                .andReturn().getResponse().getContentAsString();
+
+        // A thumbnail for the grid, made from the screen copy and kept beside it.
+        String id = JsonPath.read(second, "$.data.items[0].id");
+        byte[] bytes = mockMvc.perform(get("/api/photos/folder/{id}/thumbnail", id)
+                        .header("Authorization", "Bearer " + f.token()))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", "image/jpeg"))
+                .andReturn().getResponse().getContentAsByteArray();
+        BufferedImage thumbnail = ImageIO.read(new ByteArrayInputStream(bytes));
+        assertThat(Math.max(thumbnail.getWidth(), thumbnail.getHeight())).isLessThanOrEqualTo(480);
+        Path cache = Path.of(cacheFolder).resolve(familyId(f)).resolve("folder");
+        try (var cached = Files.list(cache)) {
+            assertThat(cached.filter(file -> file.getFileName().toString().startsWith(id)).count()).isEqualTo(2);
+        }
+    }
+
+    @Test
+    void atMostTwoPicturesAreDecodedAtOnceWhenAGridAsksForMany() throws Exception {
+        SwitchableHeicDecoder.AVAILABLE.set(true);
+        SwitchableHeicDecoder.DELAY_MS.set(300);
+        Family f = register();
+        Path folder = Files.createDirectories(root().resolve("heic-src-" + UUID.randomUUID()));
+        for (int i = 0; i < 5; i++) {
+            Files.write(folder.resolve("IMG_10" + i + ".HEIC"), new byte[] {0, 0, 0, 24, 'f', 't', 'y', 'p'});
+        }
+        mockMvc.perform(put("/api/photos/source").header("Authorization", "Bearer " + f.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(source(f.parentId(), PIN, folder.toString())))
+                .andExpect(status().isAccepted());
+        awaitIndexed(f);
+        List<String> ids = JsonPath.read(mockMvc.perform(get("/api/photos/folder/list")
+                        .header("Authorization", "Bearer " + f.token()))
+                .andReturn().getResponse().getContentAsString(), "$.data.items[*].id");
+        assertThat(ids).hasSize(5);
+
+        ExecutorService browser = Executors.newFixedThreadPool(5);
+        try {
+            List<Future<Integer>> answers = new ArrayList<>();
+            for (String id : ids) {
+                answers.add(browser.submit(() -> mockMvc.perform(get("/api/photos/folder/{id}/thumbnail", id)
+                                .header("Authorization", "Bearer " + f.token()))
+                        .andReturn().getResponse().getStatus()));
+            }
+            for (Future<Integer> answer : answers) {
+                assertThat(answer.get(30, TimeUnit.SECONDS)).isEqualTo(200);
+            }
+        } finally {
+            browser.shutdownNow();
+        }
+        // Each decode is its own process on the server, outside the JVM's memory limit.
+        assertThat(SwitchableHeicDecoder.MAX_IN_FLIGHT.get()).isEqualTo(2);
+    }
+
+    @Test
     void anotherFamilyCannotFetchTheFamilysFolderPhotos() throws Exception {
         Family f = register();
         Family other = register();
@@ -292,6 +388,8 @@ class PhotoFolderSourceIntegrationTest {
         awaitIndexed(other);
 
         mockMvc.perform(get("/api/photos/folder/{id}/content", id).header("Authorization", "Bearer " + other.token()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/photos/folder/{id}/thumbnail", id).header("Authorization", "Bearer " + other.token()))
                 .andExpect(status().isNotFound());
     }
 

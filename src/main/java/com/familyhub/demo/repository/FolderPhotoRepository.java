@@ -2,6 +2,8 @@ package com.familyhub.demo.repository;
 
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.model.FolderPhoto;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -15,6 +17,9 @@ import java.util.UUID;
 public interface FolderPhotoRepository extends JpaRepository<FolderPhoto, UUID> {
 
     List<FolderPhoto> findByFamily(Family family);
+
+    /** A page of a family's folder photos, in the page's order. */
+    Page<FolderPhoto> findByFamily(Family family, Pageable pageable);
 
     Optional<FolderPhoto> findByIdAndFamily(UUID id, Family family);
 

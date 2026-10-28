@@ -8,6 +8,7 @@ import com.familyhub.demo.dto.PhotoStorageResponse;
 import org.springframework.web.bind.annotation.RequestParam;
 import com.familyhub.demo.service.FolderPhotoService;
 import com.familyhub.demo.dto.PhotoSourceResponse;
+import com.familyhub.demo.dto.FolderPhotoPageResponse;
 import com.familyhub.demo.dto.PhotoSourceRequest;
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.model.FamilyPhoto;
@@ -110,6 +111,25 @@ public class PhotoController {
             @RequestParam(defaultValue = "200") int sample
     ) {
         return ResponseEntity.ok(new ApiResponse<>(folderPhotoService.sample(family, sample), ""));
+    }
+
+    /** A page of the folder's pictures, newest first, for the Photos screen. */
+    @GetMapping("/folder/list")
+    public ResponseEntity<ApiResponse<FolderPhotoPageResponse>> folderPhotos(
+            @AuthenticationPrincipal Family family,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "60") int size
+    ) {
+        return ResponseEntity.ok(new ApiResponse<>(folderPhotoService.list(family, page, size), ""));
+    }
+
+    /** One of the folder's pictures for the Photos screen's grid, at most 480 px. */
+    @GetMapping("/folder/{id}/thumbnail")
+    public ResponseEntity<byte[]> folderThumbnail(@AuthenticationPrincipal Family family, @PathVariable UUID id) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_JPEG)
+                .cacheControl(IMMUTABLE_PRIVATE)
+                .body(folderPhotoService.thumbnail(family, id));
     }
 
     /** One of the folder's pictures, shrunk for the screen and the right way up. */

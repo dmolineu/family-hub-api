@@ -29,6 +29,8 @@ import java.util.Iterator;
 @Component
 public class PictureShrinker {
     static final int MAX_EDGE = 1920;
+    /** The Photos screen's grid shows pictures this big at the most. */
+    static final int THUMBNAIL_EDGE = 480;
 
     /**
      * The picture for the screen.
@@ -36,13 +38,26 @@ public class PictureShrinker {
      * @throws IllegalArgumentException when the bytes are not a readable JPEG or PNG
      */
     public byte[] forScreen(byte[] bytes) {
-        BufferedImage decoded = decode(bytes);
-        BufferedImage scaled = scale(decoded);
+        return shrink(bytes, MAX_EDGE);
+    }
+
+    /**
+     * The picture for a grid of thumbnails, at most {@value #THUMBNAIL_EDGE} px.
+     *
+     * @throws IllegalArgumentException when the bytes are not a readable JPEG or PNG
+     */
+    public byte[] forThumbnail(byte[] bytes) {
+        return shrink(bytes, THUMBNAIL_EDGE);
+    }
+
+    private static byte[] shrink(byte[] bytes, int maxEdge) {
+        BufferedImage decoded = decode(bytes, maxEdge);
+        BufferedImage scaled = scale(decoded, maxEdge);
         BufferedImage upright = orient(scaled, ExifOrientation.read(bytes));
         return jpeg(upright);
     }
 
-    private static BufferedImage decode(byte[] bytes) {
+    private static BufferedImage decode(byte[] bytes, int maxEdge) {
         try (ImageInputStream input = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
             Iterator<ImageReader> readers = ImageIO.getImageReaders(input);
             if (!readers.hasNext()) {
@@ -52,7 +67,7 @@ public class PictureShrinker {
             try {
                 reader.setInput(input, true, true);
                 int longest = Math.max(reader.getWidth(0), reader.getHeight(0));
-                int step = Math.max(1, longest / MAX_EDGE);
+                int step = Math.max(1, longest / maxEdge);
                 ImageReadParam param = reader.getDefaultReadParam();
                 param.setSourceSubsampling(step, step, 0, 0);
                 return reader.read(0, param);
@@ -64,8 +79,8 @@ public class PictureShrinker {
         }
     }
 
-    private static BufferedImage scale(BufferedImage source) {
-        double factor = Math.min(1.0, (double) MAX_EDGE / Math.max(source.getWidth(), source.getHeight()));
+    private static BufferedImage scale(BufferedImage source, int maxEdge) {
+        double factor = Math.min(1.0, (double) maxEdge / Math.max(source.getWidth(), source.getHeight()));
         int width = Math.max(1, (int) Math.round(source.getWidth() * factor));
         int height = Math.max(1, (int) Math.round(source.getHeight() * factor));
         BufferedImage scaled = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);

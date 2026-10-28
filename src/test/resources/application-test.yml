@@ -46,3 +46,5 @@ photos:
   default-folder: ${java.io.tmpdir}/familyhub-test-photos/library
   # Tests read source folders themselves; the daily re-read never fires on its own.
   source-index-cron: "-"
+  # Tests choose their HEIC decoder; a heif-dec installed on the machine is not used.
+  heic-decoder: "-"

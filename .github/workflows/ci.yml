@@ -42,6 +42,11 @@ jobs:
           java-version: 21
           cache: maven
 
+      # The server image decodes HEIC with libheif's heif-dec; installing it here lets
+      # the real-decoder test run instead of skipping.
+      - name: Install the HEIC decoder
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libheif-examples libheif-plugin-libde265
+
       # The test profile carries its own JWT and encryption keys, so no repository
       # secrets are needed (an empty secret would override those defaults with "").
       - name: Build and test

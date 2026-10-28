@@ -30,6 +30,10 @@ public interface FamilyPhotoRepository extends JpaRepository<FamilyPhoto, UUID> 
     List<FamilyPhoto> findByFamily(Family family);
 
     /** Photos whose bytes are still in the database, uploaded before photos became files. */
+    /** Where the family's uploads sit inside its photo folder. */
+    @Query("select p.fileName from FamilyPhoto p where p.family = :family and p.fileName is not null")
+    List<String> findFileNamesByFamily(@Param("family") Family family);
+
     @Query("select p.id from FamilyPhoto p where p.fileName is null and p.data is not null")
     List<UUID> findIdsStillInTheDatabase();
 }

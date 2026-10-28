@@ -2,13 +2,18 @@ package com.familyhub.demo.integration;
 
 import com.familyhub.demo.config.TestcontainersConfig;
 import com.familyhub.demo.service.FolderPhotoIndexer;
+import com.familyhub.demo.service.HeicDecoder;
+import org.junit.jupiter.api.AfterEach;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -25,6 +30,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
@@ -39,11 +45,45 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * A folder of the family's existing photos (the NAS Photos share, say) shown in the
  * slideshow beside uploads: read-only, indexed in the background, sent shrunk.
  */
-@SpringBootTest
+@SpringBootTest(properties = "photos.cache-folder=${java.io.tmpdir}/familyhub-test-photo-cache")
 @AutoConfigureMockMvc
-@Import(TestcontainersConfig.class)
+@Import({TestcontainersConfig.class, PhotoFolderSourceIntegrationTest.SwitchableHeicDecoder.class})
 @ActiveProfiles("test")
 class PhotoFolderSourceIntegrationTest {
+
+    /**
+     * Stands in for heif-dec, which the server image has and this machine may not:
+     * switched on, it "decodes" any HEIC into a large JPEG.
+     */
+    @TestConfiguration
+    static class SwitchableHeicDecoder {
+        static final AtomicBoolean AVAILABLE = new AtomicBoolean(false);
+
+        @Bean
+        @Primary
+        HeicDecoder switchableHeicDecoder() {
+            return new HeicDecoder() {
+                @Override
+                public boolean available() {
+                    return AVAILABLE.get();
+                }
+
+                @Override
+                public byte[] toJpeg(Path heic) throws java.io.IOException {
+                    try {
+                        return image("jpg", 3024, 4032);
+                    } catch (Exception e) {
+                        throw new java.io.IOException(e);
+                    }
+                }
+            };
+        }
+    }
+
+    @AfterEach
+    void noDecoder() {
+        SwitchableHeicDecoder.AVAILABLE.set(false);
+    }
 
     private static final String PASSWORD = "TestPassword123!";
     private static final String PIN = "2468";
@@ -56,6 +96,9 @@ class PhotoFolderSourceIntegrationTest {
 
     @Value("${photos.roots}")
     private String rawRoot;
+
+    @Value("${photos.cache-folder}")
+    private String cacheFolder;
 
     private Path root() {
         return Path.of(rawRoot).toAbsolutePath().normalize();
@@ -122,6 +165,42 @@ class PhotoFolderSourceIntegrationTest {
     }
 
     @Test
+    void heicPhotosJoinWhenTheServerCanDecodeThemAndAreShrunkIntoTheCache() throws Exception {
+        SwitchableHeicDecoder.AVAILABLE.set(true);
+        Family f = register();
+        Path folder = library();
+
+        mockMvc.perform(put("/api/photos/source").header("Authorization", "Bearer " + f.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(source(f.parentId(), PIN, folder.toString())))
+                .andExpect(status().isAccepted());
+        awaitIndexed(f);
+
+        mockMvc.perform(get("/api/photos/source").header("Authorization", "Bearer " + f.token()))
+                .andExpect(jsonPath("$.data.photoCount").value(3))
+                .andExpect(jsonPath("$.data.skippedHeic").value(0));
+        List<String> ids = JsonPath.read(mockMvc.perform(get("/api/photos/folder").param("sample", "50")
+                        .header("Authorization", "Bearer " + f.token()))
+                .andReturn().getResponse().getContentAsString(), "$.data[*]");
+        for (String id : ids) {
+            byte[] bytes = mockMvc.perform(get("/api/photos/folder/{id}/content", id)
+                            .header("Authorization", "Bearer " + f.token()))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Content-Type", "image/jpeg"))
+                    .andReturn().getResponse().getContentAsByteArray();
+            BufferedImage shown = ImageIO.read(new ByteArrayInputStream(bytes));
+            assertThat(Math.max(shown.getWidth(), shown.getHeight())).isLessThanOrEqualTo(1920);
+        }
+
+        // The shrunk copies live in the server's cache, not among the family's photos.
+        Path cache = Path.of(cacheFolder).resolve(familyId(f)).resolve("folder");
+        try (var cached = Files.list(cache)) {
+            assertThat(cached.count()).isEqualTo(3);
+        }
+        assertThat(folder.resolve(".cache")).doesNotExist();
+    }
+
+    @Test
     void settingTheFolderNeedsAParentsPinAndAReadableFolderUnderTheRoots() throws Exception {
         Family f = register();
         Path folder = library();
@@ -165,6 +244,34 @@ class PhotoFolderSourceIntegrationTest {
     }
 
     @Test
+    void photosUploadedInTheAppIntoTheShownFolderAppearOnce() throws Exception {
+        // The family keeps uploads and the photos they drop in in one folder (the NAS
+        // Photos share), which is also the folder the slideshow shows.
+        Family f = register();
+        Path shared = root().resolve("shared-" + UUID.randomUUID());
+        mockMvc.perform(put("/api/photos/storage").header("Authorization", "Bearer " + f.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(source(f.parentId(), PIN, shared.toString())))
+                .andExpect(status().isAccepted());
+        awaitMoved(f);
+        mockMvc.perform(post("/api/photos").header("Authorization", "Bearer " + f.token())
+                        .contentType(MediaType.IMAGE_JPEG)
+                        .content(image("jpg", 640, 480)))
+                .andExpect(status().isCreated());
+        Files.write(shared.resolve("dropped-in.jpg"), image("jpg", 800, 600));
+
+        mockMvc.perform(put("/api/photos/source").header("Authorization", "Bearer " + f.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(source(f.parentId(), PIN, shared.toString())))
+                .andExpect(status().isAccepted());
+        awaitIndexed(f);
+
+        // The upload is already in the slideshow as an upload; only the dropped-in one joins.
+        mockMvc.perform(get("/api/photos/source").header("Authorization", "Bearer " + f.token()))
+                .andExpect(jsonPath("$.data.photoCount").value(1));
+    }
+
+    @Test
     void anotherFamilyCannotFetchTheFamilysFolderPhotos() throws Exception {
         Family f = register();
         Family other = register();
@@ -203,6 +310,20 @@ class PhotoFolderSourceIntegrationTest {
             Thread.sleep(100);
         }
         throw new AssertionError("The folder was not indexed");
+    }
+
+    private void awaitMoved(Family f) throws Exception {
+        Instant deadline = Instant.now().plus(Duration.ofSeconds(20));
+        while (Instant.now().isBefore(deadline)) {
+            Boolean moving = JsonPath.read(mockMvc.perform(get("/api/photos/storage")
+                            .header("Authorization", "Bearer " + f.token()))
+                    .andReturn().getResponse().getContentAsString(), "$.data.moving");
+            if (!moving) {
+                return;
+            }
+            Thread.sleep(100);
+        }
+        throw new AssertionError("The move did not finish");
     }
 
     private String familyId(Family f) throws Exception {

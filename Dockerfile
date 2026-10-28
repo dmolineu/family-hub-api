@@ -19,11 +19,17 @@ RUN ./mvnw clean package -DskipTests -B
 # Stage 2: Run (JRE only, no Maven or source code)
 FROM eclipse-temurin:21-jre
 WORKDIR /app
+# libheif's heif-dec turns iPhone HEIC photos into JPEGs in its own process; the JVM
+# has no HEIC decoder. The libde265 plugin is the HEVC decoder it needs.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libheif-examples libheif-plugin-libde265 \
+    && rm -rf /var/lib/apt/lists/*
 # create a system user with no shell
 RUN useradd -r -s /bin/false appuser
-# Photos are files under /photos. Created here and owned by the app user so a named
-# volume mounted there starts writable; a NAS share mounted there must allow it too.
-RUN mkdir -p /photos/library && chown -R appuser /photos
+# Photos are files under /photos; shrunk copies of a folder's photos are kept in
+# /photo-cache. Created here and owned by the app user so named volumes mounted there
+# start writable; a NAS share mounted under /photos must allow it too.
+RUN mkdir -p /photos/library /photo-cache && chown -R appuser /photos /photo-cache
 # from pom.xml :: <finalName>app</finalName>
 COPY --from=build /app/target/app.jar app.jar
 USER appuser

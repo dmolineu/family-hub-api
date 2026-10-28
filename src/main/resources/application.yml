@@ -42,4 +42,8 @@ sports:
 photos:
   roots: ${PHOTO_STORAGE_ROOTS:/photos}
   default-folder: ${PHOTO_DEFAULT_FOLDER:/photos/library}
+  # Shrunk copies of folder photos; blank keeps them in a hidden .cache in the photo folder.
+  cache-folder: ${PHOTO_CACHE_FOLDER:}
+  # libheif's decoder, installed in the image; "-" skips HEIC photos instead.
+  heic-decoder: ${PHOTO_HEIC_DECODER:heif-dec}
 

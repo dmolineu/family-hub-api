@@ -2,6 +2,7 @@ package com.familyhub.demo.service;
 
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.model.FolderPhoto;
+import com.familyhub.demo.repository.FamilyPhotoRepository;
 import com.familyhub.demo.repository.FamilyRepository;
 import com.familyhub.demo.repository.FolderPhotoRepository;
 import lombok.RequiredArgsConstructor;
@@ -29,13 +30,16 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
- * Keeps the index of a family's source folder: every JPEG and PNG in it, found by
- * walking the folder. Skips hidden folders and the ones NAS software adds (Synology's
- * "@eaDir" thumbnails, "#recycle"), and counts HEIC pictures, which the server cannot
- * decode, so the family can be told why they are missing. Reading a large share takes a
- * while, so it runs in the background; how the last reading went is kept in memory.
+ * Keeps the index of a family's source folder: every JPEG and PNG in it, and every
+ * HEIC when the server can decode them, found by walking the folder. Skips hidden
+ * folders and the ones NAS software adds (Synology's "@eaDir" thumbnails, "#recycle"),
+ * and the family's own uploads when they are kept in the same folder, since those are
+ * already in the slideshow. Without a decoder, HEIC pictures are counted so the family
+ * can be told why they are missing. Reading a large share takes a while, so it runs in
+ * the background; how the last reading went is kept in memory.
  */
 @Slf4j
 @Component
@@ -47,6 +51,9 @@ public class FolderPhotoIndexer {
 
     private final FamilyRepository familyRepository;
     private final FolderPhotoRepository folderPhotoRepository;
+    private final FamilyPhotoRepository familyPhotoRepository;
+    private final PhotoFiles photoFiles;
+    private final HeicDecoder heicDecoder;
     private final TransactionTemplate transactions;
     private final Clock clock;
     private final Map<UUID, Status> statuses = new ConcurrentHashMap<>();
@@ -88,7 +95,7 @@ public class FolderPhotoIndexer {
         Path root = Path.of(family.getPhotoSourceFolder());
         markIndexing(familyId);
         try {
-            Walk walk = walk(root);
+            Walk walk = walk(root, heicDecoder.available(), uploadsUnder(family, root));
             transactions.executeWithoutResult(status -> apply(family, walk.pictures()));
             statuses.put(familyId, new Status(false, Instant.now(clock), walk.heic(), null));
             log.info("Photo folder read, familyId={}, pictures={}, heicSkipped={}", familyId,
@@ -105,7 +112,32 @@ public class FolderPhotoIndexer {
 
     private record Walk(Map<String, Found> pictures, int heic) {}
 
-    private static Walk walk(Path root) throws IOException {
+    /**
+     * The family's uploads that sit inside the shown folder, as paths relative to it.
+     * Real paths are compared, so a link or a differently spelt path to the same folder
+     * still matches.
+     */
+    private Set<String> uploadsUnder(Family family, Path root) {
+        try {
+            Path storage = photoFiles.folderFor(family);
+            if (!Files.isDirectory(storage)) {
+                return Set.of();
+            }
+            Path source = root.toRealPath();
+            Path realStorage = storage.toRealPath();
+            if (!realStorage.startsWith(source)) {
+                return Set.of();
+            }
+            Path prefix = source.relativize(realStorage);
+            return familyPhotoRepository.findFileNamesByFamily(family).stream()
+                    .map(name -> prefix.resolve(name).normalize().toString().replace('\\', '/'))
+                    .collect(Collectors.toSet());
+        } catch (IOException e) {
+            return Set.of();
+        }
+    }
+
+    private static Walk walk(Path root, boolean heicReadable, Set<String> uploads) throws IOException {
         Map<String, Found> pictures = new HashMap<>();
         int[] heic = {0};
         Files.walkFileTree(root, EnumSet.noneOf(FileVisitOption.class), MAX_DEPTH, new SimpleFileVisitor<>() {
@@ -125,9 +157,9 @@ public class FolderPhotoIndexer {
                 String name = file.getFileName().toString();
                 int dot = name.lastIndexOf('.');
                 String extension = dot < 0 ? "" : name.substring(dot + 1).toLowerCase(Locale.ROOT);
-                if (PICTURES.contains(extension)) {
+                if (PICTURES.contains(extension) || (heicReadable && HEIC.contains(extension))) {
                     String relative = root.relativize(file).toString().replace('\\', '/');
-                    if (relative.length() <= 1000) {
+                    if (relative.length() <= 1000 && !uploads.contains(relative)) {
                         pictures.put(relative, new Found(attrs.size(), attrs.lastModifiedTime().toInstant()));
                     }
                 } else if (HEIC.contains(extension)) {

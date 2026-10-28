@@ -41,6 +41,23 @@ class PhotoFilesTest {
     }
 
     @Test
+    void keepsShrunkCopiesInTheConfiguredCacheOutsideTheFamilysPhotos() {
+        Family family = new Family();
+        family.setId(java.util.UUID.randomUUID());
+        family.setPhotoFolder(root.resolve("nas/Photos").toString());
+        // Without a cache folder, a hidden one inside the family's photo folder.
+        assertThat(files.cacheFolderFor(family)).isEqualTo(root.resolve("nas/Photos/.cache"));
+
+        PhotoStorageProperties properties = new PhotoStorageProperties();
+        properties.setRoots(List.of(root.toString()));
+        properties.setDefaultFolder(root.resolve("library").toString());
+        properties.setCacheFolder(temp.resolve("cache").toString());
+        PhotoFiles cached = new PhotoFiles(properties);
+        assertThat(cached.cacheFolderFor(family))
+                .isEqualTo(temp.resolve("cache").resolve(family.getId().toString()));
+    }
+
+    @Test
     void acceptsAndCreatesAFolderUnderARoot() {
         Path folder = files.validate(root.resolve("nas/family").toString());
         assertThat(folder).isDirectory().isEqualTo(root.resolve("nas/family"));

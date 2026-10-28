@@ -36,6 +36,7 @@ public class FolderPhotoService {
     private final FolderPhotoIndexer indexer;
     private final PhotoFiles photoFiles;
     private final PictureShrinker shrinker;
+    private final HeicDecoder heicDecoder;
     private final ParentPinService parentPinService;
 
     /** The folder, how many pictures it holds, and how its last reading went. */
@@ -97,7 +98,7 @@ public class FolderPhotoService {
         if (!file.startsWith(folder) || !Files.isRegularFile(file)) {
             throw new ResourceNotFoundException("Photo", id);
         }
-        Path cached = photoFiles.folderFor(family).resolve(".cache/folder")
+        Path cached = photoFiles.cacheFolderFor(family).resolve("folder")
                 .resolve(id + "-" + photo.getModifiedAt().toEpochMilli() + ".jpg");
         try {
             if (Files.isRegularFile(cached)) {
@@ -106,13 +107,19 @@ public class FolderPhotoService {
             if (Files.size(file) > MAX_SOURCE_BYTES) {
                 throw new ResourceNotFoundException("Photo", id);
             }
-            byte[] shrunk = shrinker.forScreen(Files.readAllBytes(file));
+            byte[] original = isHeic(file) ? heicDecoder.toJpeg(file) : Files.readAllBytes(file);
+            byte[] shrunk = shrinker.forScreen(original);
             cache(cached, shrunk);
             return shrunk;
         } catch (IOException | IllegalArgumentException e) {
             log.warn("Folder photo unreadable, photoId={}, file={}: {}", id, file, e.toString());
             throw new ResourceNotFoundException("Photo", id);
         }
+    }
+
+    private static boolean isHeic(Path file) {
+        String name = file.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+        return name.endsWith(".heic") || name.endsWith(".heif");
     }
 
     private static void cache(Path cached, byte[] bytes) {

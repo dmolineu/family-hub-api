@@ -37,6 +37,19 @@ public class PhotoFiles {
         return Path.of(folder).toAbsolutePath().normalize();
     }
 
+    /**
+     * Where shrunk copies for the family are kept: its own folder in the configured
+     * cache (a local volume, so a NAS photo share holds only photos), or a hidden
+     * ".cache" inside the family's photo folder when no cache is configured.
+     */
+    public Path cacheFolderFor(Family family) {
+        String cache = properties.getCacheFolder();
+        if (cache == null || cache.isBlank()) {
+            return folderFor(family).resolve(".cache");
+        }
+        return Path.of(cache.trim()).toAbsolutePath().normalize().resolve(family.getId().toString());
+    }
+
     /** The roots photos may be stored under, as absolute, tidied paths. */
     public List<String> roots() {
         return properties.getRoots().stream()

@@ -261,7 +261,7 @@ class ChoreApprovalIntegrationTest {
     void aRejectedChoreIsUntickedAndCanBeDoneAgain() throws Exception {
         Family f = register();
         makeKid(f, f.mayaId());
-        setPin(f, f.dadId(), "135790");
+        setPin(f, f.dadId(), "1357");
         String choreId = createChore(f, "Make the bed", f.mayaId(), 2);
         String today = today(f);
         mockMvc.perform(put("/api/chores/templates/{id}/current-period-completion", choreId)
@@ -273,14 +273,14 @@ class ChoreApprovalIntegrationTest {
                 mockMvc.perform(post("/api/chores/approvals/pending")
                                 .header("Authorization", auth(f))
                                 .contentType(MediaType.APPLICATION_JSON)
-                                .content(unlock(f.dadId(), "135790")))
+                                .content(unlock(f.dadId(), "1357")))
                         .andReturn().getResponse().getContentAsString(),
                 "$.data[0].completionId");
 
         mockMvc.perform(post("/api/chores/approvals")
                         .header("Authorization", auth(f))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"approverMemberId\": \"" + f.dadId() + "\", \"pin\": \"135790\", \"reject\": [\""
+                        .content("{\"approverMemberId\": \"" + f.dadId() + "\", \"pin\": \"1357\", \"reject\": [\""
                                 + completionId + "\"], \"reason\": \"Still messy\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.rejected").value(1));
@@ -289,7 +289,7 @@ class ChoreApprovalIntegrationTest {
         mockMvc.perform(post("/api/chores/activity")
                         .header("Authorization", auth(f))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"approverMemberId\": \"" + f.dadId() + "\", \"pin\": \"135790\"}"))
+                        .content("{\"approverMemberId\": \"" + f.dadId() + "\", \"pin\": \"1357\"}"))
                 .andExpect(jsonPath("$.data[0].kind").value("REJECTED"))
                 .andExpect(jsonPath("$.data[0].reason").value("Still messy"))
                 .andExpect(jsonPath("$.data[0].actorName").value("Dad"));
@@ -342,6 +342,22 @@ class ChoreApprovalIntegrationTest {
         assertThat(points(f, f.dadId())).isEqualTo(3);
         mockMvc.perform(get("/api/chores/approvals/count").header("Authorization", auth(f)))
                 .andExpect(jsonPath("$.data.count").value(0));
+    }
+
+    @Test
+    void aPinIsExactlyFourDigits() throws Exception {
+        Family f = register();
+        // The pad checks a PIN the moment its fourth digit is in, so a longer one
+        // could never be entered: it would be sent short and count as a wrong try.
+        for (String pin : new String[] {"135", "13579", "135790", "13a7"}) {
+            mockMvc.perform(put("/api/family/members/{id}/pin", f.dadId())
+                            .header("Authorization", auth(f))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"password\": \"" + PASSWORD + "\", \"pin\": \"" + pin + "\"}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.errors[0].message").value("A PIN is 4 digits"));
+        }
+        setPin(f, f.dadId(), "1357");
     }
 
     @Test

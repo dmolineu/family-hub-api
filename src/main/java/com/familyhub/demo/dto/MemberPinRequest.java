@@ -9,7 +9,7 @@ public record MemberPinRequest(
         String password,
 
         @NotBlank(message = "Enter a PIN")
-        @Pattern(regexp = "\\d{4,6}", message = "A PIN is 4 to 6 digits")
+        @Pattern(regexp = "\\d{4}", message = "A PIN is 4 digits")
         String pin
 ) {
 }

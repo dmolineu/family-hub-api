@@ -42,8 +42,15 @@ public interface CalendarEventRepository extends JpaRepository<CalendarEvent, UU
 
     Optional<CalendarEvent> findByRecurringEventAndOriginalDate(CalendarEvent recurringEvent, LocalDate originalDate);
 
-    Optional<CalendarEvent> findByGoogleEventId(String googleEventId);
-    void deleteByGoogleEventId(String googleEventId);
+    /**
+     * One calendar's copy of a Google event. A shared event keeps the same Google id in
+     * every calendar it appears in, so the id alone does not identify a row.
+     */
+    Optional<CalendarEvent> findBySyncedCalendarAndGoogleEventId(GoogleSyncedCalendar syncedCalendar,
+                                                                 String googleEventId);
+
+    /** Deletes one calendar's copy of a Google event, leaving other calendars' copies. */
+    void deleteBySyncedCalendarAndGoogleEventId(GoogleSyncedCalendar syncedCalendar, String googleEventId);
 
     /** Native events only: Google-synced rows are left for the sync to manage. */
     @Modifying(clearAutomatically = true, flushAutomatically = true)

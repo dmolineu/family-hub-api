@@ -4,8 +4,10 @@ import com.familyhub.demo.dto.GoogleCalendarInfo;
 import com.familyhub.demo.dto.GoogleCalendarResponse;
 import com.familyhub.demo.event.SyncRequestedEvent;
 import com.familyhub.demo.exception.BadRequestException;
+import com.familyhub.demo.model.EventSource;
 import com.familyhub.demo.model.GoogleOAuthToken;
 import com.familyhub.demo.model.GoogleSyncedCalendar;
+import com.familyhub.demo.repository.CalendarEventRepository;
 import com.familyhub.demo.repository.GoogleOAuthTokenRepository;
 import com.familyhub.demo.repository.GoogleSyncedCalendarRepository;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +27,7 @@ public class GoogleCalendarSelectionService {
     private final GoogleSyncedCalendarRepository syncedCalendarRepository;
     private final GoogleCalendarListService calendarListService;
     private final ApplicationEventPublisher eventPublisher;
+    private final CalendarEventRepository calendarEventRepository;
 
     public List<GoogleCalendarResponse> listCalendarsWithSelections(UUID memberId) {
         tokenRepository.findByMemberId(memberId)
@@ -45,6 +48,16 @@ public class GoogleCalendarSelectionService {
                 .toList();
     }
 
+    /**
+     * Ticks exactly the given calendars for the member and starts a sync. An unticked
+     * calendar's events are deleted and its sync position forgotten: the sync only visits
+     * ticked calendars, so its events would otherwise stay on the family calendar for good,
+     * and ticking it again must import it afresh rather than resume from a stale token.
+     *
+     * @param memberId    the member whose Google calendars are being chosen
+     * @param calendarIds Google ids of the calendars to keep in sync; every other one is unticked
+     * @return each of the member's Google calendars with whether it is now ticked
+     */
     @Transactional
     public List<GoogleCalendarResponse> updateCalendarSelections(UUID memberId, List<String> calendarIds) {
         GoogleOAuthToken token = tokenRepository.findByMemberId(memberId)
@@ -79,8 +92,11 @@ public class GoogleCalendarSelectionService {
                     syncedCalendarRepository.save(existing);
                 }
             } else if (existing != null) {
+                // Also for a calendar unticked before this cleanup existed: its events still linger.
                 existing.setEnabled(false);
+                existing.setSyncToken(null);
                 syncedCalendarRepository.save(existing);
+                calendarEventRepository.deleteBySyncedCalendarAndSource(existing, EventSource.GOOGLE);
             }
 
             response.add(new GoogleCalendarResponse(cal.id(), cal.name(), cal.primary(), shouldEnable));

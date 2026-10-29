@@ -1,6 +1,12 @@
 package com.familyhub.demo.integration;
 
 import com.familyhub.demo.config.TestcontainersConfig;
+import com.familyhub.demo.model.GoogleSyncedCalendar;
+import com.familyhub.demo.repository.GoogleSyncedCalendarRepository;
+import com.familyhub.demo.service.GoogleCalendarSyncService;
+import com.google.api.client.util.DateTime;
+import com.google.api.services.calendar.model.Event;
+import com.google.api.services.calendar.model.EventDateTime;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,9 +19,13 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import javax.sql.DataSource;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -30,6 +40,12 @@ class GoogleCalendarSyncIntegrationTest {
 
     @Autowired
     private DataSource dataSource;
+
+    @Autowired
+    private GoogleCalendarSyncService syncService;
+
+    @Autowired
+    private GoogleSyncedCalendarRepository syncedCalendarRepository;
 
     private String token;
     private String memberId;
@@ -313,6 +329,136 @@ class GoogleCalendarSyncIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(1))
                 .andExpect(jsonPath("$.data[0].title").value("Updated Title"));
+    }
+
+    @Test
+    void sharedGoogleEvent_isStoredChangedAndCancelledPerCalendar() throws Exception {
+        // A Google event shared by two calendars keeps one id in both of them.
+        String tokenId = insertOAuthToken();
+        GoogleSyncedCalendar babe = syncedCalendar(tokenId, "babe@group.calendar.google.com");
+        GoogleSyncedCalendar hub = syncedCalendar(tokenId, "hub@group.calendar.google.com");
+
+        syncService.persistFullSync(babe, List.of(timedEvent("shared-1", "Practice")));
+        syncService.persistFullSync(hub, List.of(timedEvent("shared-1", "Practice")));
+        assertThat(titlesByCalendar("shared-1")).containsOnly(
+                entry(babe.getId(), "Practice"), entry(hub.getId(), "Practice"));
+
+        // An edit seen by one calendar's sync changes only that calendar's copy
+        syncService.persistIncrementalChanges(babe, List.of(timedEvent("shared-1", "Practice moved")));
+        assertThat(titlesByCalendar("shared-1")).containsOnly(
+                entry(babe.getId(), "Practice moved"), entry(hub.getId(), "Practice"));
+
+        // Cancelled in one calendar, still on the other
+        Event cancelled = timedEvent("shared-1", "Practice moved").setStatus("cancelled");
+        syncService.persistIncrementalChanges(babe, List.of(cancelled));
+        assertThat(titlesByCalendar("shared-1")).containsOnly(entry(hub.getId(), "Practice"));
+    }
+
+    @Test
+    void sharedRecurringEvent_exceptionsAttachToTheirOwnCalendarsParent() throws Exception {
+        String tokenId = insertOAuthToken();
+        GoogleSyncedCalendar babe = syncedCalendar(tokenId, "babe@group.calendar.google.com");
+        GoogleSyncedCalendar hub = syncedCalendar(tokenId, "hub@group.calendar.google.com");
+
+        syncService.persistFullSync(babe, List.of(weeklyParent("rec-1"), movedInstance("rec-1", "Moved in Babe")));
+        syncService.persistFullSync(hub, List.of(weeklyParent("rec-1"), movedInstance("rec-1", "Moved in Hub")));
+        assertThat(parentCalendarOfException("rec-1_20250610")).containsOnly(
+                entry(babe.getId(), babe.getId()), entry(hub.getId(), hub.getId()));
+
+        // An incremental change to one calendar's instance stays with that calendar's series
+        syncService.persistIncrementalChanges(hub, List.of(movedInstance("rec-1", "Moved again in Hub")));
+        assertThat(titlesByCalendar("rec-1_20250610")).containsOnly(
+                entry(babe.getId(), "Moved in Babe"), entry(hub.getId(), "Moved again in Hub"));
+        assertThat(parentCalendarOfException("rec-1_20250610")).containsOnly(
+                entry(babe.getId(), babe.getId()), entry(hub.getId(), hub.getId()));
+    }
+
+    @Test
+    void reconnectingGoogle_takesTheOldCalendarsEventsWithThem() throws Exception {
+        // Reconnecting deletes the member's token, which removes its synced calendars
+        // in the database. Their events must go too, or they linger with no calendar
+        // that would ever sync or remove them.
+        String tokenId = insertOAuthToken();
+        GoogleSyncedCalendar babe = syncedCalendar(tokenId, "babe@group.calendar.google.com");
+        syncService.persistFullSync(babe, List.of(timedEvent("old-1", "Old event")));
+        assertThat(titlesByCalendar("old-1")).hasSize(1);
+
+        try (var conn = dataSource.getConnection();
+             var stmt = conn.prepareStatement("DELETE FROM google_oauth_token WHERE id = ?::uuid")) {
+            stmt.setString(1, tokenId);
+            stmt.executeUpdate();
+        }
+
+        try (var conn = dataSource.getConnection();
+             var stmt = conn.prepareStatement(
+                     "SELECT count(*) FROM calendar_event WHERE google_event_id = 'old-1'")) {
+            var rs = stmt.executeQuery();
+            rs.next();
+            assertThat(rs.getInt(1)).isZero();
+        }
+    }
+
+    // --- Google sync helpers ---
+
+    private GoogleSyncedCalendar syncedCalendar(String tokenId, String googleCalendarId) throws Exception {
+        String id = UUID.randomUUID().toString();
+        insertSyncedCalendar(id, tokenId, googleCalendarId);
+        return syncedCalendarRepository.findById(UUID.fromString(id)).orElseThrow();
+    }
+
+    private static Event timedEvent(String id, String title) {
+        return new Event()
+                .setId(id)
+                .setSummary(title)
+                .setStatus("confirmed")
+                .setStart(new EventDateTime().setDateTime(new DateTime("2025-06-03T09:00:00-07:00")))
+                .setEnd(new EventDateTime().setDateTime(new DateTime("2025-06-03T10:00:00-07:00")));
+    }
+
+    private static Event weeklyParent(String id) {
+        return timedEvent(id, "Weekly practice").setRecurrence(List.of("RRULE:FREQ=WEEKLY;BYDAY=TU"));
+    }
+
+    private static Event movedInstance(String parentId, String title) {
+        return new Event()
+                .setId(parentId + "_20250610")
+                .setSummary(title)
+                .setStatus("confirmed")
+                .setRecurringEventId(parentId)
+                .setOriginalStartTime(new EventDateTime().setDateTime(new DateTime("2025-06-10T09:00:00-07:00")))
+                .setStart(new EventDateTime().setDateTime(new DateTime("2025-06-10T11:00:00-07:00")))
+                .setEnd(new EventDateTime().setDateTime(new DateTime("2025-06-10T12:00:00-07:00")));
+    }
+
+    /** Title of each stored copy of a Google event, by the synced calendar holding it. */
+    private Map<UUID, String> titlesByCalendar(String googleEventId) throws Exception {
+        Map<UUID, String> titles = new HashMap<>();
+        try (var conn = dataSource.getConnection();
+             var stmt = conn.prepareStatement(
+                     "SELECT synced_calendar_id, title FROM calendar_event WHERE google_event_id = ?")) {
+            stmt.setString(1, googleEventId);
+            var rs = stmt.executeQuery();
+            while (rs.next()) {
+                titles.put(rs.getObject(1, UUID.class), rs.getString(2));
+            }
+        }
+        return titles;
+    }
+
+    /** For each stored copy of an exception: its calendar → the calendar of the series it hangs off. */
+    private Map<UUID, UUID> parentCalendarOfException(String googleEventId) throws Exception {
+        Map<UUID, UUID> parents = new HashMap<>();
+        try (var conn = dataSource.getConnection();
+             var stmt = conn.prepareStatement(
+                     "SELECT e.synced_calendar_id, p.synced_calendar_id FROM calendar_event e " +
+                             "JOIN calendar_event p ON p.id = e.recurring_event_id WHERE e.google_event_id = ?")) {
+            stmt.setString(1, googleEventId);
+            var rs = stmt.executeQuery();
+            while (rs.next()) {
+                parents.put(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class));
+            }
+        }
+        return parents;
     }
 
     // --- SQL Helpers ---

@@ -3,9 +3,11 @@ package com.familyhub.demo.service;
 import com.familyhub.demo.dto.GoogleCalendarInfo;
 import com.familyhub.demo.dto.GoogleCalendarResponse;
 import com.familyhub.demo.exception.BadRequestException;
+import com.familyhub.demo.model.EventSource;
 import com.familyhub.demo.model.FamilyMember;
 import com.familyhub.demo.model.GoogleOAuthToken;
 import com.familyhub.demo.model.GoogleSyncedCalendar;
+import com.familyhub.demo.repository.CalendarEventRepository;
 import com.familyhub.demo.repository.GoogleOAuthTokenRepository;
 import com.familyhub.demo.repository.GoogleSyncedCalendarRepository;
 import org.junit.jupiter.api.Test;
@@ -23,6 +25,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -39,6 +42,9 @@ class GoogleCalendarSelectionServiceTest {
 
     @Mock
     private ApplicationEventPublisher eventPublisher;
+
+    @Mock
+    private CalendarEventRepository calendarEventRepository;
 
     @InjectMocks
     private GoogleCalendarSelectionService selectionService;
@@ -124,6 +130,39 @@ class GoogleCalendarSelectionServiceTest {
         // work@group should have been disabled
         assertThat(workCal.isEnabled()).isFalse();
         verify(syncedCalendarRepository, times(2)).save(any());
+    }
+
+    @Test
+    void updateCalendarSelections_deselectingDeletesThatCalendarsEventsAndSyncToken() {
+        GoogleOAuthToken token = new GoogleOAuthToken();
+        token.setMember(new FamilyMember());
+        when(tokenRepository.findByMemberId(MEMBER_ID)).thenReturn(Optional.of(token));
+
+        when(calendarListService.listCalendars(MEMBER_ID)).thenReturn(List.of(
+                new GoogleCalendarInfo("primary", "Joe's Calendar", true),
+                new GoogleCalendarInfo("babe@group", "Babe", false)
+        ));
+
+        GoogleSyncedCalendar primary = new GoogleSyncedCalendar();
+        primary.setGoogleCalendarId("primary");
+        primary.setEnabled(true);
+        primary.setSyncToken("primary-token");
+
+        GoogleSyncedCalendar babe = new GoogleSyncedCalendar();
+        babe.setGoogleCalendarId("babe@group");
+        babe.setEnabled(true);
+        babe.setSyncToken("babe-token");
+
+        when(syncedCalendarRepository.findByMemberId(MEMBER_ID)).thenReturn(List.of(primary, babe));
+
+        selectionService.updateCalendarSelections(MEMBER_ID, List.of("primary"));
+
+        // The unticked calendar's events leave the family calendar, and ticking it
+        // again later starts a full import rather than resuming from a stale token.
+        verify(calendarEventRepository).deleteBySyncedCalendarAndSource(babe, EventSource.GOOGLE);
+        assertThat(babe.getSyncToken()).isNull();
+        verify(calendarEventRepository, never()).deleteBySyncedCalendarAndSource(eq(primary), any());
+        assertThat(primary.getSyncToken()).isEqualTo("primary-token");
     }
 
     @Test

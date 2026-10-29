@@ -28,7 +28,8 @@ public class FamilyMember {
     @Column(nullable = false)
     private String name;
 
-    @Enumerated(EnumType.STRING)
+    /** A named colour or a custom #rrggbb; stored as the enum did, see {@code FamilyColorConverter}. */
+    @Convert(converter = FamilyColorConverter.class)
     @NotNull
     @Column(nullable = false)
     private FamilyColor color;

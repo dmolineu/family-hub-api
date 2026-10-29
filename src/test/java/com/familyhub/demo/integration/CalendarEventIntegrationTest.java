@@ -12,6 +12,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.UUID;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -49,7 +51,9 @@ class CalendarEventIntegrationTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        String username = "user" + System.nanoTime();
+        // Not System.nanoTime(): it counts from boot, and on a Mac awake for weeks its 16 digits
+        // push the username past the 20-character limit.
+        String username = "user" + UUID.randomUUID().toString().substring(0, 8);
         String body = registerAndExtract(username);
         token = JsonPath.read(body, "$.data.token");
         memberId = JsonPath.read(body, "$.data.family.members[0].id");
@@ -207,7 +211,7 @@ class CalendarEventIntegrationTest {
         String eventId = JsonPath.read(createBody, "$.data.id");
 
         // Family B registers
-        String familyBUsername = "user" + System.nanoTime();
+        String familyBUsername = "user" + UUID.randomUUID().toString().substring(0, 8);
         String familyBBody = registerAndExtract(familyBUsername);
         String familyBToken = JsonPath.read(familyBBody, "$.data.token");
 

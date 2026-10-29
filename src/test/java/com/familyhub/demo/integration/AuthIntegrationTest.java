@@ -11,6 +11,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.UUID;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -27,7 +29,9 @@ class AuthIntegrationTest {
     private MockMvc mockMvc;
 
     private String uniqueUsername() {
-        return "user" + System.nanoTime();
+        // Not System.nanoTime(): it counts from boot, and on a Mac awake for weeks its 16 digits
+        // push the username past the 20-character limit.
+        return "user" + UUID.randomUUID().toString().substring(0, 8);
     }
 
     private String registerJson(String username) {

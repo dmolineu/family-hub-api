@@ -33,6 +33,7 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -70,7 +71,9 @@ class PasswordResetLauncherIntegrationTest {
 
     @Test
     void resetsThePasswordWithoutAWebServerOrScheduledJobs_andSignsOutEveryDevice() throws Exception {
-        String username = "reset" + System.nanoTime();
+        // Not System.nanoTime(): it counts from boot, and on a Mac awake for weeks its 16 digits
+        // push the username past the 20-character limit.
+        String username = "reset" + UUID.randomUUID().toString().substring(0, 8);
         String body = mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""

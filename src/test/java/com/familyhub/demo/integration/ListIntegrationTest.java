@@ -64,7 +64,9 @@ class ListIntegrationTest {
     private JdbcTemplate jdbcTemplate;
 
     private String uniqueUsername() {
-        return "lists" + System.nanoTime();
+        // Not System.nanoTime(): it counts from boot, and on a Mac awake for weeks its 16 digits
+        // push the username past the 20-character limit.
+        return "lists" + UUID.randomUUID().toString().substring(0, 8);
     }
 
     private String registerAndGetToken(String username) throws Exception {

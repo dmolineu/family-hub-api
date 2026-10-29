@@ -18,7 +18,8 @@ public class FamilyMapper {
                 family.getCreatedAt(),
                 family.getWeatherLocation(),
                 family.getLatitude(),
-                family.getLongitude()
+                family.getLongitude(),
+                family.getThemeRevertMinutes()
         );
     }
 }

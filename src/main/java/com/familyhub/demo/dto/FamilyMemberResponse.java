@@ -14,8 +14,16 @@ public record FamilyMemberResponse(
         String avatarUrl,
         MemberBirthday birthday,
         MemberRole role,
-        boolean hasPin
+        boolean hasPin,
+        /** {@code builtin:<id>} or {@code pack:<name>}; null for the screen's own look. */
+        String theme
 ) {
+    /** The shape before members had their own look. */
+    public FamilyMemberResponse(UUID id, String name, FamilyColor color, String email, String avatarUrl,
+                                MemberBirthday birthday, MemberRole role, boolean hasPin) {
+        this(id, name, color, email, avatarUrl, birthday, role, hasPin, null);
+    }
+
 
     /** The shape before roles and PINs existed: a parent without a PIN. */
     public FamilyMemberResponse(UUID id, String name, FamilyColor color, String email, String avatarUrl,
@@ -37,7 +45,8 @@ public record FamilyMemberResponse(
                 familyMember.getAvatarUrl(),
                 familyMember.getBirthday(),
                 familyMember.getRole(),
-                familyMember.hasPin()
+                familyMember.hasPin(),
+                familyMember.getTheme()
         );
     }
 }

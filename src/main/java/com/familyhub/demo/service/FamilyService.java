@@ -21,6 +21,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class FamilyService {
+    /** The choices for how long a screen keeps someone's own look: never, or minutes untouched. */
+    static final java.util.Set<Integer> THEME_REVERT_MINUTES = java.util.Set.of(0, 5, 15, 60);
+
     private final FamilyRepository familyRepository;
     private final WeatherProvider weatherProvider;
 
@@ -54,6 +57,13 @@ public class FamilyService {
 
         if (family.weatherLocation() != null) {
             applyWeatherLocation(toBeUpdated, family.weatherLocation());
+        }
+
+        if (family.themeRevertMinutes() != null) {
+            if (!THEME_REVERT_MINUTES.contains(family.themeRevertMinutes())) {
+                throw new BadRequestException("Going back to the screen's own look is never, or after 5, 15 or 60 minutes");
+            }
+            toBeUpdated.setThemeRevertMinutes(family.themeRevertMinutes());
         }
 
         return FamilyMapper.toDto(familyRepository.save(toBeUpdated));

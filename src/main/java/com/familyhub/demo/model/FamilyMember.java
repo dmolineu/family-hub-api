@@ -37,6 +37,10 @@ public class FamilyMember {
     @Column(name = "avatar_url", columnDefinition = "TEXT")
     private String avatarUrl;
 
+    /** The look a screen switches to when this member is tapped; null for the screen's own. See {@code MemberThemes}. */
+    @Column(name = "theme", length = 100)
+    private String theme;
+
     @Email
     private String email;
 

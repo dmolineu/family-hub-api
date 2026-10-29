@@ -1,5 +1,7 @@
 package com.familyhub.demo.service;
 
+import com.familyhub.demo.repository.ThemePackRepository;
+
 
 import com.familyhub.demo.dto.FamilyMemberRequest;
 import com.familyhub.demo.dto.FamilyMemberResponse;
@@ -27,6 +29,7 @@ import java.util.UUID;
 public class FamilyMemberService {
     private final FamilyMemberRepository familyMemberRepository;
     private final ChoreTemplateRepository choreTemplateRepository;
+    private final ThemePackRepository themePackRepository;
 
     public List<FamilyMemberResponse> findAllMembers(Family family) {
          return familyMemberRepository.findByFamily(family)
@@ -96,6 +99,34 @@ public class FamilyMemberService {
 
         familyMemberRepository.delete(toBeDeleted);
         log.info("Family member deleted, memberId={}, familyId={}", familyMemberId, family.getId());
+    }
+
+    /**
+     * Sets the look a screen switches to when this member is tapped: a built-in look,
+     * one of the family's theme packs by name, or null for the screen's own look.
+     *
+     * @throws BadRequestException when the theme is malformed or names no pack the family has
+     */
+    @Transactional
+    public FamilyMemberResponse setTheme(Family family, UUID familyMemberId, String theme) {
+        FamilyMember member = findById(familyMemberId);
+        if (!isMemberOfFamily(family, member)) {
+            throw new AccessDeniedException("Unauthorized");
+        }
+        String trimmed = theme == null || theme.isBlank() ? null : theme.trim();
+        if (trimmed != null) {
+            if (!MemberThemes.isWellFormed(trimmed)) {
+                throw new BadRequestException("A theme is builtin:<look> or pack:<pack name>");
+            }
+            MemberThemes.packName(trimmed).ifPresent(name -> {
+                if (!themePackRepository.existsByFamilyIdAndNameIgnoreCase(family.getId(), name)) {
+                    throw new BadRequestException("No theme pack named \"" + name + "\" in this family");
+                }
+            });
+        }
+        member.setTheme(trimmed);
+        log.info("Member theme set, memberId={}, familyId={}, theme={}", familyMemberId, family.getId(), trimmed);
+        return FamilyMemberMapper.toDto(familyMemberRepository.save(member));
     }
 
     // -- Helper methods --

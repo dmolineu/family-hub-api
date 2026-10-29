@@ -137,8 +137,15 @@ public record BackupDocument(
             String timezone,
             String weatherLocation,
             Double latitude,
-            Double longitude
-    ) {}
+            Double longitude,
+            /** Absent in backups taken before members had their own look: the family keeps its own. */
+            Integer themeRevertMinutes
+    ) {
+        /** The shape before members had their own look. */
+        public FamilyBackup(String name, String timezone, String weatherLocation, Double latitude, Double longitude) {
+            this(name, timezone, weatherLocation, latitude, longitude, null);
+        }
+    }
 
     public record MemberBackup(
             @NotBlank String ref,
@@ -149,12 +156,20 @@ public record BackupDocument(
             /** Absent in backups taken before birthdays existed. */
             MemberBirthday birthday,
             /** Absent in backups taken before roles existed: existing members keep theirs. */
-            MemberRole role
+            MemberRole role,
+            /** {@code builtin:<id>} or {@code pack:<name>}; absent before members had their own look. */
+            String theme
     ) {
+        /** The shape before members had their own look. */
+        public MemberBackup(String ref, String name, FamilyColor color, String avatarUrl, String email,
+                            MemberBirthday birthday, MemberRole role) {
+            this(ref, name, color, avatarUrl, email, birthday, role, null);
+        }
+
         /** The shape before roles existed. */
         public MemberBackup(String ref, String name, FamilyColor color, String avatarUrl, String email,
                             MemberBirthday birthday) {
-            this(ref, name, color, avatarUrl, email, birthday, null);
+            this(ref, name, color, avatarUrl, email, birthday, (MemberRole) null);
         }
     }
 

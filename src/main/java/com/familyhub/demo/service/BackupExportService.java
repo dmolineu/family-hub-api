@@ -86,7 +86,8 @@ public class BackupExportService {
                         family.getTimezone(),
                         family.getWeatherLocation(),
                         family.getLatitude(),
-                        family.getLongitude()
+                        family.getLongitude(),
+                        family.getThemeRevertMinutes()
                 ),
                 members(family),
                 chores(family),
@@ -106,7 +107,7 @@ public class BackupExportService {
         return familyMemberRepository.findByFamily(family).stream()
                 // Never the PIN hash: backups carry no credentials.
                 .map(m -> new MemberBackup(ref(m.getId()), m.getName(), m.getColor(), m.getAvatarUrl(), m.getEmail(),
-                        m.getBirthday(), m.getRole()))
+                        m.getBirthday(), m.getRole(), m.getTheme()))
                 .toList();
     }
 

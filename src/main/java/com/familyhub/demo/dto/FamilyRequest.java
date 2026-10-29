@@ -15,5 +15,13 @@ public record FamilyRequest(
 
         /** A city, "city, state" or postal code; blank clears it; null leaves it unchanged. */
         @Size(max = 120, message = "Weather location must be 120 characters or less")
-        String weatherLocation
-) {}
+        String weatherLocation,
+
+        /** Never (0), 5, 15 or 60 minutes; null leaves it unchanged. */
+        Integer themeRevertMinutes
+) {
+    /** The shape before members had their own look. */
+    public FamilyRequest(String name, String username, String timezone, String weatherLocation) {
+        this(name, username, timezone, weatherLocation, null);
+    }
+}

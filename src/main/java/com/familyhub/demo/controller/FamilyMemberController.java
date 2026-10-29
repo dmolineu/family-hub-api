@@ -5,6 +5,7 @@ import com.familyhub.demo.dto.FamilyMemberRequest;
 import com.familyhub.demo.dto.FamilyMemberResponse;
 import com.familyhub.demo.dto.MemberPinRequest;
 import com.familyhub.demo.dto.MemberRoleRequest;
+import com.familyhub.demo.dto.MemberThemeRequest;
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.service.FamilyMemberService;
 import com.familyhub.demo.service.ParentPinService;
@@ -81,6 +82,17 @@ public class FamilyMemberController {
             @Valid @RequestBody MemberRoleRequest request
     ) {
         return ResponseEntity.ok(new ApiResponse<>(parentPinService.setRole(family, id, request), "Role updated"));
+    }
+
+    /** Picks the look a screen switches to when this member is tapped; null for the screen's own. */
+    @PutMapping("/{id}/theme")
+    public ResponseEntity<ApiResponse<FamilyMemberResponse>> setTheme(
+            @AuthenticationPrincipal Family family,
+            @PathVariable UUID id,
+            @Valid @RequestBody MemberThemeRequest request
+    ) {
+        return ResponseEntity.ok(new ApiResponse<>(
+                familyMemberService.setTheme(family, id, request.theme()), "Theme updated"));
     }
 
     /** Sets a parent's own PIN; needs the family password. */

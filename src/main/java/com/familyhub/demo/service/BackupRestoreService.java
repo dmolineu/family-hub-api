@@ -101,6 +101,10 @@ public class BackupRestoreService {
         family.setWeatherLocation(document.family().weatherLocation());
         family.setLatitude(document.family().latitude());
         family.setLongitude(document.family().longitude());
+        Integer revertMinutes = document.family().themeRevertMinutes();
+        if (revertMinutes != null && FamilyService.THEME_REVERT_MINUTES.contains(revertMinutes)) {
+            family.setThemeRevertMinutes(revertMinutes);
+        }
         familyRepository.save(family);
 
         Map<String, UUID> memberIdsByRef = upsertMembers(document.members(), family);
@@ -225,6 +229,9 @@ public class BackupRestoreService {
             member.setAvatarUrl(MemberAvatars.normalize(backup.avatarUrl()).orElse(null));
             member.setEmail(backup.email());
             member.setBirthday(backup.birthday());
+            // A malformed theme is dropped rather than refusing the whole restore. Pack
+            // names are not checked here: the packs arrive in the same restore.
+            member.setTheme(MemberThemes.isWellFormed(backup.theme()) ? backup.theme() : null);
             if (backup.role() != null) {
                 member.setRole(backup.role());
             }

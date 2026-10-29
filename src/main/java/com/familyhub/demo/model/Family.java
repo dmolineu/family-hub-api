@@ -66,6 +66,13 @@ public class Family implements UserDetails {
 
     private Double longitude;
 
+    /**
+     * How long a screen showing someone's own look stays untouched before it goes back
+     * to its own look; 0 means it never goes back by itself. One value for every screen.
+     */
+    @Column(name = "theme_revert_minutes", nullable = false)
+    private int themeRevertMinutes;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 

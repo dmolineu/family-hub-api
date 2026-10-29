@@ -98,8 +98,9 @@ class PersonalThemeIntegrationTest {
         setTheme(f, f.mayaId(), "\"pack:Jeep (desert)\"")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.theme").value("pack:Jeep (desert)"));
+        // By name, not position: members come back in no set order, and an update can move one.
         mockMvc.perform(get("/api/family").header("Authorization", auth(f)))
-                .andExpect(jsonPath("$.data.members[1].theme").value("pack:Jeep (desert)"));
+                .andExpect(jsonPath("$.data.members[?(@.name == 'Maya')].theme").value("pack:Jeep (desert)"));
 
         // Nothing means the screen's own look again.
         setTheme(f, f.mayaId(), "null")
@@ -171,7 +172,7 @@ class PersonalThemeIntegrationTest {
         String backup = mockMvc.perform(get("/api/backup").header("Authorization", auth(f)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.family.themeRevertMinutes").value(60))
-                .andExpect(jsonPath("$.members[1].theme").value("builtin:sunrise"))
+                .andExpect(jsonPath("$.members[?(@.name == 'Maya')].theme").value("builtin:sunrise"))
                 .andReturn().getResponse().getContentAsString();
 
         Family other = register();

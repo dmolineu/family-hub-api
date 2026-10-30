@@ -79,7 +79,9 @@ public class Family implements UserDetails {
     @UpdateTimestamp
     private LocalDateTime updatedAt;
 
+    /** In their listed order, as {@code FamilyMemberRepository.findByFamily} reads them. */
     @OneToMany(mappedBy = "family", orphanRemoval = true, cascade = CascadeType.ALL)
+    @OrderBy("sortOrder ASC, id ASC")
     private List<FamilyMember> familyMembers;
 
     @Override

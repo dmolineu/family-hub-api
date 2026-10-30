@@ -13,7 +13,16 @@ import java.util.List;
 import java.util.UUID;
 
 public interface FamilyMemberRepository extends JpaRepository<FamilyMember, UUID> {
-    public List<FamilyMember> findByFamily(Family family);
+    /**
+     * A family's members in their listed order. Without the ORDER BY, Postgres returns
+     * them in storage order, which an edit can change. The id only breaks a tie.
+     */
+    @Query("select m from FamilyMember m where m.family = :family order by m.sortOrder, m.id")
+    List<FamilyMember> findByFamily(@Param("family") Family family);
+
+    /** The sort order a new member of the family gets: after everyone already listed. */
+    @Query("select coalesce(max(m.sortOrder) + 1, 0) from FamilyMember m where m.family = :family")
+    int nextSortOrder(@Param("family") Family family);
 
     /** How many members of a family hold a role (a family must keep at least one parent). */
     long countByFamilyAndRole(Family family, MemberRole role);

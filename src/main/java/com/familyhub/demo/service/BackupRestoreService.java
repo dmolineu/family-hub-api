@@ -218,6 +218,8 @@ public class BackupRestoreService {
             existingByName.putIfAbsent(normalize(member.getName()), member);
         }
         Map<String, UUID> idsByRef = new HashMap<>();
+        // The backup lists members in their order, so a restore puts that order back.
+        int sortOrder = 0;
         for (MemberBackup backup : backups) {
             FamilyMember member = existingByName.get(normalize(backup.name()));
             if (member == null) {
@@ -225,6 +227,7 @@ public class BackupRestoreService {
                 member.setFamily(family);
                 member.setName(backup.name().trim());
             }
+            member.setSortOrder(sortOrder++);
             member.setColor(backup.color());
             member.setAvatarUrl(MemberAvatars.normalize(backup.avatarUrl()).orElse(null));
             member.setEmail(backup.email());

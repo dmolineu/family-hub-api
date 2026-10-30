@@ -42,6 +42,10 @@ public class FamilyMember {
     @Column(name = "theme", length = 100)
     private String theme;
 
+    /** Where the member is listed in their family, from 0; new members go last. */
+    @Column(name = "sort_order", nullable = false)
+    private int sortOrder;
+
     @Email
     private String email;
 

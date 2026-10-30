@@ -48,7 +48,9 @@ public class FamilyMemberService {
 
     @Transactional
     public FamilyMemberResponse addFamilyMember(Family family, FamilyMemberRequest toAdd) {
-        FamilyMember saved = familyMemberRepository.save(FamilyMemberMapper.toEntity(toAdd, family));
+        FamilyMember member = FamilyMemberMapper.toEntity(toAdd, family);
+        member.setSortOrder(familyMemberRepository.nextSortOrder(family));
+        FamilyMember saved = familyMemberRepository.save(member);
         log.info("Family member created, memberId={}, familyId={}", saved.getId(), family.getId());
         return FamilyMemberMapper.toDto(saved);
     }

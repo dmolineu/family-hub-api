@@ -2,6 +2,7 @@ package com.familyhub.demo.service;
 
 import com.familyhub.demo.dto.AuthResponse;
 import com.familyhub.demo.dto.ChangePasswordRequest;
+import com.familyhub.demo.dto.FamilyMemberRequest;
 import com.familyhub.demo.dto.LoginRequest;
 import com.familyhub.demo.dto.RegisterRequest;
 import com.familyhub.demo.dto.UsernameCheckResponse;
@@ -12,6 +13,7 @@ import com.familyhub.demo.exception.UsernameAlreadyExists;
 import com.familyhub.demo.mapper.FamilyMapper;
 import com.familyhub.demo.mapper.FamilyMemberMapper;
 import com.familyhub.demo.model.Family;
+import com.familyhub.demo.model.FamilyMember;
 import com.familyhub.demo.repository.FamilyRepository;
 import com.familyhub.demo.security.LoginAttemptLimiter;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +22,9 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.stream.IntStream;
 
 @Slf4j
 @Service
@@ -49,9 +54,15 @@ public class AuthService {
         family.setUsername(registerRequest.username());
         family.setPasswordHash(passwordEncoder.encode(registerRequest.password()));
         family.setTimezone(FamilyTimezoneResolver.normalizeRequestedTimezone(registerRequest.timezone()));
+        // Listed in the order they were entered at sign-up.
+        List<FamilyMemberRequest> members = registerRequest.members();
         family.setFamilyMembers(
-                registerRequest.members().stream()
-                        .map(request -> FamilyMemberMapper.toEntity(request, family))
+                IntStream.range(0, members.size())
+                        .mapToObj(i -> {
+                            FamilyMember member = FamilyMemberMapper.toEntity(members.get(i), family);
+                            member.setSortOrder(i);
+                            return member;
+                        })
                         .toList()
         );
         Family saved = familyRepository.saveAndFlush(family);

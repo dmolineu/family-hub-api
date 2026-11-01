@@ -2,7 +2,7 @@ package com.familyhub.demo.inbox;
 
 import java.util.Optional;
 
-/** Reads a message for events or a recipe. */
+/** Reads a message for events or a recipe, and a parent's reply about the events still waiting. */
 public interface MailReader {
     /** Whether a reader is set up; without one, messages with words are filed unread. */
     boolean available();
@@ -20,4 +20,11 @@ public interface MailReader {
      *                             says whether to try again at the next reading
      */
     MailReading read(ReadingRequest request) throws MailReaderException;
+
+    /**
+     * Reads what a parent's reply decides for each waiting event, with any changes it asks for.
+     *
+     * @throws MailReaderException as {@link #read}
+     */
+    ReplyReading readReply(ReplyRequest request) throws MailReaderException;
 }

@@ -5,6 +5,8 @@ import com.familyhub.demo.inbox.MailReader;
 import com.familyhub.demo.inbox.MailReaderException;
 import com.familyhub.demo.inbox.MailReading;
 import com.familyhub.demo.inbox.ReadingRequest;
+import com.familyhub.demo.inbox.ReplyReading;
+import com.familyhub.demo.inbox.ReplyRequest;
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.model.InboxSender;
 import com.familyhub.demo.repository.FamilyRepository;
@@ -64,6 +66,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -85,6 +88,7 @@ class FamilyInboxIntegrationTest {
     private static final String PASSWORD = "TestPassword123!";
     private static final String DAD = "dad@example.com";
     private static final String MOM = "mom@example.com";
+    private static final String KID = "kid@example.com";
     private static final String GMAIL_VERIFIED = "mx.google.com; dkim=pass header.i=@example.com;"
             + " dmarc=pass header.from=example.com";
 
@@ -139,6 +143,8 @@ class FamilyInboxIntegrationTest {
         static final AtomicReference<MailReaderException> FAIL_ONCE = new AtomicReference<>();
         static final AtomicInteger CALLS = new AtomicInteger();
         static final AtomicReference<String> PROBLEM = new AtomicReference<>();
+        static final AtomicReference<ReplyReading> NEXT_REPLY = new AtomicReference<>();
+        static final AtomicReference<ReplyRequest> LAST_REPLY = new AtomicReference<>();
 
         @Bean
         @Primary
@@ -162,6 +168,13 @@ class FamilyInboxIntegrationTest {
                         throw failure;
                     }
                     return NEXT.get();
+                }
+
+                @Override
+                public ReplyReading readReply(ReplyRequest request) {
+                    CALLS.incrementAndGet();
+                    LAST_REPLY.set(request);
+                    return NEXT_REPLY.get();
                 }
             };
         }
@@ -198,6 +211,8 @@ class FamilyInboxIntegrationTest {
         ScriptedReader.NEXT.set(null);
         ScriptedReader.FAIL_ONCE.set(null);
         ScriptedReader.PROBLEM.set(null);
+        ScriptedReader.NEXT_REPLY.set(null);
+        ScriptedReader.LAST_REPLY.set(null);
         ScriptedReader.CALLS.set(0);
     }
 
@@ -323,6 +338,124 @@ class FamilyInboxIntegrationTest {
         // The undo is understood without reading the message again.
         assertThat(ScriptedReader.CALLS.get()).isEqualTo(readerCalls);
         assertThat(GreenMailUtil.getBody(latestReplyTo(DAD))).contains("Taken off").contains("Swim meet");
+    }
+
+    @Test
+    void aParentRepliesApprovedAndTheWaitingEventsGoOnTheCalendar() throws Exception {
+        ScriptedReader.NEXT.set(events(
+                allDay("Parade of Lights", "2027-12-13", MailReading.Confidence.MEDIUM, "No start time"),
+                allDay("Parade of Lights", "2027-12-20", MailReading.Confidence.MEDIUM, "No start time")));
+        hub.deliver(mail(DAD, GMAIL_VERIFIED, "<parade-1@example.com>", "#event", "", pdfPart()));
+        poller.pollNow();
+        assertThat(eventTitles("2027-12-01", "2027-12-31")).doesNotContain("Parade of Lights");
+        MimeMessage confirmation = latestReplyTo(DAD);
+        // The confirmation numbers what waits and says how to decide by replying.
+        assertThat(GreenMailUtil.getBody(confirmation)).contains("1. Parade of Lights").contains("2. Parade of Lights")
+                .contains("APPROVED");
+        // Approving needs no reader: the word alone is enough, even while the reader is away.
+        ScriptedReader.AVAILABLE.set(false);
+        int readerCalls = ScriptedReader.CALLS.get();
+
+        // Mom was copied on the confirmation; her reply decides as well as Dad's would.
+        hub.deliver(replyingTo(confirmation.getMessageID(), MOM, GMAIL_VERIFIED, "<parade-ok@example.com>",
+                "Re: #event", "Approved!\n\nOn Sun, Nov 1, 2026 at 9:24 AM Family Hub <\nhub@localhost> wrote:\n"
+                        + "> 1. Parade of Lights"));
+        poller.pollNow();
+
+        assertThat(eventDates("2027-12-01", "2027-12-31", "Parade of Lights"))
+                .containsExactlyInAnyOrder("2027-12-13", "2027-12-20");
+        assertThat(ScriptedReader.CALLS.get()).isEqualTo(readerCalls);
+        assertThat(count("FamilyHub-Processed")).isEqualTo(2);
+        MimeMessage done = latestReplyTo(MOM);
+        assertThat(done.getHeader("In-Reply-To", null)).isEqualTo("<parade-ok@example.com>");
+        assertThat(GreenMailUtil.getBody(done)).contains("Added").contains("Parade of Lights").contains("UNDO");
+
+        // UNDO in answer to that takes off what the approval added.
+        hub.deliver(replyingTo(done.getMessageID(), MOM, GMAIL_VERIFIED, "<parade-undo@example.com>", "Re: #event",
+                "undo"));
+        poller.pollNow();
+        assertThat(eventTitles("2027-12-01", "2027-12-31")).doesNotContain("Parade of Lights");
+    }
+
+    @Test
+    void aParentsReplyWithChangesIsReadAndApplied() throws Exception {
+        ScriptedReader.NEXT.set(events(
+                allDay("Boat parade", "2027-11-13", MailReading.Confidence.MEDIUM, "No start time"),
+                allDay("Boat parade", "2027-11-20", MailReading.Confidence.MEDIUM, "No start time")));
+        hub.deliver(mail(DAD, GMAIL_VERIFIED, "<boats-1@example.com>", "#event", "", pdfPart()));
+        poller.pollNow();
+        MimeMessage confirmation = latestReplyTo(DAD);
+        ScriptedReader.NEXT_REPLY.set(new ReplyReading(List.of(
+                new ReplyReading.Decision(1, ReplyReading.Action.ADD,
+                        timed("Boat parade", "2027-11-13", "5:30 PM", "8:00 PM", MailReading.Confidence.MEDIUM, "Mom")),
+                new ReplyReading.Decision(2, ReplyReading.Action.TURN_DOWN,
+                        allDay("Boat parade", "2027-11-20", MailReading.Confidence.MEDIUM, ""))), ""));
+
+        hub.deliver(replyingTo(confirmation.getMessageID(), DAD, GMAIL_VERIFIED, "<boats-fix@example.com>",
+                "Re: #event", "Only the 13th, it starts at 5:30, for Mom\n\n"
+                        + "On Sun, Nov 1, 2026 at 9:24 AM <hub@localhost> wrote:\n> 1. Boat parade"));
+        poller.pollNow();
+
+        // The reader is given the parent's own words and the waiting events in the confirmation's order.
+        ReplyRequest asked = ScriptedReader.LAST_REPLY.get();
+        assertThat(asked.text()).isEqualTo("Only the 13th, it starts at 5:30, for Mom");
+        assertThat(asked.waiting()).extracting(MailReading.ReadEvent::date).containsExactly("2027-11-13", "2027-11-20");
+        assertThat(eventDates("2027-11-01", "2027-11-30", "Boat parade")).containsExactly("2027-11-13");
+        assertThat(eventStart("2027-11-01", "2027-11-30", "Boat parade")).isEqualTo("5:30 PM");
+        assertThat(eventMember("2027-11-01", "2027-11-30", "Boat parade")).isEqualTo(memberId("Mom"));
+        assertThat(GreenMailUtil.getBody(latestReplyTo(DAD))).contains("Added").contains("Turned down");
+    }
+
+    @Test
+    void replyingNoTurnsTheWaitingEventsDown() throws Exception {
+        ScriptedReader.NEXT.set(events(allDay("Book fair", "2027-09-14", MailReading.Confidence.LOW, "Which week?")));
+        hub.deliver(mail(DAD, GMAIL_VERIFIED, "<books-1@example.com>", "Book fair", "", pdfPart()));
+        poller.pollNow();
+        MimeMessage confirmation = latestReplyTo(DAD);
+        int readerCalls = ScriptedReader.CALLS.get();
+
+        hub.deliver(replyingTo(confirmation.getMessageID(), DAD, GMAIL_VERIFIED, "<books-no@example.com>",
+                "Re: Book fair", "No thanks\n\nSent from my iPhone"));
+        poller.pollNow();
+
+        assertThat(ScriptedReader.CALLS.get()).isEqualTo(readerCalls);
+        assertThat(eventTitles("2027-09-01", "2027-09-30")).doesNotContain("Book fair");
+        assertThat(GreenMailUtil.getBody(latestReplyTo(DAD))).contains("Turned down").contains("Book fair");
+        mockMvc.perform(get("/api/inbox").header("Authorization", "Bearer " + token))
+                .andExpect(jsonPath("$.data.imports[?(@.title == 'Book fair')].status").value("REJECTED"));
+    }
+
+    @Test
+    void onlyAParentCanDecideByEmail() throws Exception {
+        ScriptedReader.NEXT.set(events(allDay("Bake sale", "2027-10-09", MailReading.Confidence.MEDIUM, "No time")));
+        hub.deliver(mail(DAD, GMAIL_VERIFIED, "<bake-1@example.com>", "Bake sale", "", pdfPart()));
+        poller.pollNow();
+        MimeMessage confirmation = latestReplyTo(DAD);
+
+        hub.deliver(replyingTo(confirmation.getMessageID(), KID, GMAIL_VERIFIED, "<bake-kid@example.com>",
+                "Re: Bake sale", "approved"));
+        poller.pollNow();
+
+        assertThat(eventTitles("2027-10-01", "2027-10-31")).doesNotContain("Bake sale");
+        assertThat(GreenMailUtil.getBody(latestReplyTo(KID))).containsIgnoringCase("only a parent");
+        mockMvc.perform(get("/api/inbox").header("Authorization", "Bearer " + token))
+                .andExpect(jsonPath("$.data.imports[?(@.title == 'Bake sale')].status").value("PENDING"));
+    }
+
+    @Test
+    void withoutAReaderAChangeIsNotGuessedAndTheParentIsTold() throws Exception {
+        ScriptedReader.NEXT.set(events(allDay("Science fair", "2027-08-19", MailReading.Confidence.MEDIUM, "No time")));
+        hub.deliver(mail(DAD, GMAIL_VERIFIED, "<science-1@example.com>", "Science fair", "", pdfPart()));
+        poller.pollNow();
+        MimeMessage confirmation = latestReplyTo(DAD);
+        ScriptedReader.AVAILABLE.set(false);
+
+        hub.deliver(replyingTo(confirmation.getMessageID(), DAD, GMAIL_VERIFIED, "<science-6pm@example.com>",
+                "Re: Science fair", "Make it 6 PM"));
+        poller.pollNow();
+
+        assertThat(eventTitles("2027-08-01", "2027-08-31")).doesNotContain("Science fair");
+        assertThat(GreenMailUtil.getBody(latestReplyTo(DAD))).contains("APPROVED").contains("app");
     }
 
     @Test
@@ -470,6 +603,19 @@ class FamilyInboxIntegrationTest {
         return ids.getFirst();
     }
 
+    private List<String> eventDates(String from, String to, String title) throws Exception {
+        return JsonPath.read(mockMvc.perform(get("/api/calendar/events").param("startDate", from)
+                        .param("endDate", to).header("Authorization", "Bearer " + token))
+                .andReturn().getResponse().getContentAsString(), "$.data[?(@.title == '" + title + "')].date");
+    }
+
+    private String eventStart(String from, String to, String title) throws Exception {
+        List<String> starts = JsonPath.read(mockMvc.perform(get("/api/calendar/events").param("startDate", from)
+                        .param("endDate", to).header("Authorization", "Bearer " + token))
+                .andReturn().getResponse().getContentAsString(), "$.data[?(@.title == '" + title + "')].startTime");
+        return starts.getFirst();
+    }
+
     private String memberId(String name) throws Exception {
         List<String> ids = JsonPath.read(mockMvc.perform(get("/api/family").header("Authorization", "Bearer " + token))
                 .andReturn().getResponse().getContentAsString(), "$.data.members[?(@.name == '" + name + "')].id");
@@ -498,14 +644,23 @@ class FamilyInboxIntegrationTest {
 
     private String signIn() throws Exception {
         if (familyRepository.findByUsername(FAMILY).isEmpty()) {
-            mockMvc.perform(post("/api/auth/register")
+            String registered = mockMvc.perform(post("/api/auth/register")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {"username": "%s", "password": "%s", "familyName": "Inbox Family",
                                      "members": [{"name": "Dad", "color": "teal", "email": "%s"},
-                                                 {"name": "Mom", "color": "coral", "email": "%s"}],
+                                                 {"name": "Mom", "color": "coral", "email": "%s"},
+                                                 {"name": "Kid", "color": "green", "email": "%s"}],
                                      "timezone": "America/Los_Angeles", "starterRecipes": false}
-                                    """.formatted(FAMILY, PASSWORD, DAD, MOM)))
+                                    """.formatted(FAMILY, PASSWORD, DAD, MOM, KID)))
+                    .andExpect(status().isOk())
+                    .andReturn().getResponse().getContentAsString();
+            // A kid with an address of their own may send to the inbox, but not decide for it.
+            List<String> kidIds = JsonPath.read(registered, "$.data.family.members[?(@.name == 'Kid')].id");
+            mockMvc.perform(put("/api/family/members/{id}/role", kidIds.getFirst())
+                            .header("Authorization", "Bearer " + JsonPath.read(registered, "$.data.token"))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"role\": \"KID\", \"password\": \"" + PASSWORD + "\"}"))
                     .andExpect(status().isOk());
         }
         String body = mockMvc.perform(post("/api/auth/login")

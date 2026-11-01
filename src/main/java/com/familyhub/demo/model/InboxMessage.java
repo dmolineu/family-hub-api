@@ -51,6 +51,11 @@ public class InboxMessage {
     @Column(name = "reply_message_id", length = 998)
     private String replyMessageId;
 
+    /** For a reply the inbox handled: the message its conversation began with; null otherwise. */
+    @ManyToOne
+    @JoinColumn(name = "answers_id")
+    private InboxMessage answers;
+
     @Column(name = "processed_at", nullable = false)
     private Instant processedAt;
 }

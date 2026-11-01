@@ -7,6 +7,7 @@ import com.familyhub.demo.dto.CreateRecipeRequest;
 import com.familyhub.demo.dto.ImportRecipeRequest;
 import com.familyhub.demo.dto.PhotoResponse;
 import com.familyhub.demo.dto.RecipeDetailResponse;
+import com.familyhub.demo.exception.BadRequestException;
 import com.familyhub.demo.inbox.MailContent;
 import com.familyhub.demo.inbox.MailReader;
 import com.familyhub.demo.inbox.MailReaderException;
@@ -14,7 +15,10 @@ import com.familyhub.demo.inbox.MailReading;
 import com.familyhub.demo.inbox.ReadingRequest;
 import com.familyhub.demo.inbox.ReceivedMail;
 import com.familyhub.demo.inbox.Reply;
+import com.familyhub.demo.inbox.ReplyReading;
+import com.familyhub.demo.inbox.ReplyRequest;
 import com.familyhub.demo.inbox.ReplySender;
+import com.familyhub.demo.inbox.ReplyText;
 import com.familyhub.demo.inbox.SenderVerifier;
 import com.familyhub.demo.model.MemberRole;
 import jakarta.mail.MessagingException;
@@ -44,6 +48,8 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -57,8 +63,9 @@ import java.util.regex.Pattern;
  * words adds its photos to the library without anything leaving the house. Anything
  * with words goes to the reader: events it is sure of go straight on the calendar,
  * the rest wait for a parent, and the sender (with both parents copied) is told what
- * happened; replying UNDO takes the added ones off again. Every message is recorded so
- * it is never handled twice, and filed under a label saying how it went.
+ * happened; replying UNDO takes the added ones off again, and a parent's reply decides
+ * what waits (APPROVED, NO, or what to change). Every message is recorded so it is never
+ * handled twice, and filed under a label saying how it went.
  */
 @Slf4j
 @Service
@@ -66,6 +73,18 @@ public class InboxService {
     private static final Set<String> PICTURE_TYPES = Set.of("image/jpeg", "image/png", "image/heic", "image/heif");
     private static final int MAX_PHOTOS_PER_MESSAGE = 20;
     private static final int MAX_EVENTS_PER_MESSAGE = 40;
+    /** The order an email lists waiting events in, which is what a reply's numbers refer to. */
+    private static final Comparator<InboxImport> LISTED = Comparator.comparing(InboxImport::getCreatedAt)
+            .thenComparing(InboxImport::getId);
+    /** A reply approving all that waits, once reduced to plain words: "Approved!", "yes please". */
+    private static final Pattern APPROVE = Pattern.compile(
+            "(approved?|yes|ok|okay|create|add|confirm(ed)?)( (it|them|all|both|please|thanks|thank you))*");
+    /** A reply turning all that waits down: "No thanks", "reject". */
+    private static final Pattern TURN_DOWN = Pattern.compile(
+            "(no|nope|reject(ed)?|decline|skip)( (it|them|all|both|please|thanks|thank you))*");
+    private static final String HOW_TO_DECIDE = "A parent can reply APPROVED to add them as listed, say what to"
+            + " change (\"it starts at 5:30 PM\", \"only the first one\"), or reply NO to turn them down. They are"
+            + " in the app too (Family inbox).\n";
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("EEE, MMM d", Locale.ENGLISH);
     /** Lines phones and mail apps add to every message, which are not the sender's words. */
     private static final Pattern SIGNATURE = Pattern.compile(
@@ -228,7 +247,7 @@ public class InboxService {
         InboxMessage message = record(family, mail, InboxOutcome.EVENTS, reading.summary());
         List<FamilyMember> familyMembers = members.findByFamily(family);
         List<String> added = new ArrayList<>();
-        List<String> waiting = new ArrayList<>();
+        List<InboxImport> waiting = new ArrayList<>();
         for (MailReading.ReadEvent event : reading.events().subList(0,
                 Math.min(MAX_EVENTS_PER_MESSAGE, reading.events().size()))) {
             InboxImport proposal = newImport(family, message, InboxImportKind.EVENT, event.title());
@@ -249,12 +268,10 @@ public class InboxService {
             if (!wasAdded) {
                 proposal.setStatus(InboxImportStatus.PENDING);
                 proposal.setDetails(toJson(event));
-                String why = event.uncertainty() == null || event.uncertainty().isBlank()
-                        ? (request.isEmpty() ? "the date or time could not be read" : "")
-                        : event.uncertainty();
-                waiting.add(describe(event, familyMembers) + (why.isBlank() ? "" : " (" + why + ")"));
+                waiting.add(imports.save(proposal));
+            } else {
+                imports.save(proposal);
             }
-            imports.save(proposal);
         }
         message.setDetail(truncate(added.size() + " event(s) added, " + waiting.size() + " waiting for review"));
         StringBuilder text = new StringBuilder("Hi from the Family Hub. I read \"")
@@ -265,9 +282,8 @@ public class InboxService {
             text.append('\n');
         }
         if (!waiting.isEmpty()) {
-            text.append("Waiting for a parent to check in the app (Family inbox):\n");
-            waiting.forEach(line -> text.append("  - ").append(line).append('\n'));
-            text.append('\n');
+            text.append("Waiting for a parent to check:\n").append(waitingList(waiting, familyMembers))
+                    .append('\n').append(HOW_TO_DECIDE).append('\n');
         }
         if (added.isEmpty() && waiting.isEmpty()) {
             text.append("I found no events in it that are still to come.\n\n");
@@ -346,16 +362,73 @@ public class InboxService {
         return properties.getUnprocessedLabel();
     }
 
-    /** A reply to one of the inbox's confirmations: UNDO takes off what that message added. */
+    /**
+     * A reply to one of the inbox's emails, about the message its conversation began
+     * with: UNDO takes off what that message added; from a parent, anything else decides
+     * the events it left waiting (APPROVED and NO as they are, other words through the
+     * reader). The verified sender address stands in for the app's PIN.
+     */
     private String handleReply(Family family, ReceivedMail mail, InboxMessage answered) {
-        String firstLine = mail.content().text().lines().map(String::strip).filter(line -> !line.isEmpty())
+        // Every reply records the first message, so an answer to an answer still finds it.
+        InboxMessage first = answered.getAnswers() != null ? answered.getAnswers() : answered;
+        String words = ReplyText.ownWords(mail.content().text());
+        String firstLine = words.lines().map(String::strip).filter(line -> !line.isEmpty())
                 .findFirst().orElse("").toLowerCase(Locale.ROOT);
-        if (!firstLine.startsWith("undo")) {
-            record(family, mail, InboxOutcome.UNPROCESSED, "A reply to a confirmation; only UNDO is understood");
+        if (firstLine.startsWith("undo")) {
+            return undo(family, mail, first);
+        }
+        List<InboxImport> waiting = imports.findByMessage(first).stream()
+                .filter(item -> item.getKind() == InboxImportKind.EVENT
+                        && item.getStatus() == InboxImportStatus.PENDING)
+                .sorted(LISTED).toList();
+        if (waiting.isEmpty()) {
+            record(family, mail, InboxOutcome.UNPROCESSED, "A reply with nothing waiting; only UNDO is understood",
+                    first);
             return properties.getUnprocessedLabel();
         }
+        Optional<FamilyMember> parent = parentWithAddress(family, mail.from());
+        if (parent.isEmpty()) {
+            return notDecided(family, mail, first, "Only a parent can decide by email",
+                    "Hi from the Family Hub. Only a parent can approve or turn down events by email. A parent can"
+                            + " reply to the first email, or check them in the app (Family inbox).\n", true);
+        }
+        String plain = words.toLowerCase(Locale.ROOT).replaceAll("[^a-z ]+", " ").strip().replaceAll(" +", " ");
+        if (APPROVE.matcher(plain).matches()) {
+            return decide(family, mail, first, waiting, every(waiting, ReplyReading.Action.ADD), "", parent.get());
+        }
+        if (TURN_DOWN.matcher(plain).matches()) {
+            return decide(family, mail, first, waiting, every(waiting, ReplyReading.Action.TURN_DOWN), "",
+                    parent.get());
+        }
+        String asApprovedOrApp = " Reply APPROVED to add them as listed or NO to turn them down, or change them in"
+                + " the app (Family inbox).\n";
+        if (!reader.available()) {
+            return notDecided(family, mail, first, "A change asked by email, which needs the reader",
+                    "Hi from the Family Hub. Reading changes needs the Claude reader, which is not set up, so"
+                            + " nothing was changed." + asApprovedOrApp, false);
+        }
+        ReplyReading reading;
+        try {
+            reading = reader.readReply(new ReplyRequest(words, waiting.stream().map(review::readEvent).toList(),
+                    today(family), zone(family).getId(),
+                    members.findByFamily(family).stream().map(FamilyMember::getName).toList()));
+        } catch (MailReaderException e) {
+            if (e.temporary()) {
+                log.info("Inbox reader busy; reply left for the next reading, familyId={}: {}",
+                        family.getId(), e.getMessage());
+                return null;
+            }
+            notDecided(family, mail, first, e.getMessage(), "Hi from the Family Hub. I could not read your reply,"
+                    + " so nothing was changed." + asApprovedOrApp, false);
+            return properties.getUnprocessedLabel();
+        }
+        return decide(family, mail, first, waiting, reading.decisions() == null ? List.of() : reading.decisions(),
+                reading.note() == null ? "" : reading.note().strip(), parent.get());
+    }
+
+    private String undo(Family family, ReceivedMail mail, InboxMessage first) {
         List<String> takenOff = new ArrayList<>();
-        for (InboxImport added : imports.findByMessage(answered)) {
+        for (InboxImport added : imports.findByMessage(first)) {
             if (added.getStatus() != InboxImportStatus.ADDED) {
                 continue;
             }
@@ -363,7 +436,7 @@ public class InboxService {
             imports.save(added);
             takenOff.add(added.getTitle());
         }
-        InboxMessage message = record(family, mail, InboxOutcome.UNDO, takenOff.size() + " taken off");
+        InboxMessage message = record(family, mail, InboxOutcome.UNDO, takenOff.size() + " taken off", first);
         String text = takenOff.isEmpty()
                 ? "Hi from the Family Hub. There was nothing left to take off.\n"
                 : "Hi from the Family Hub. Taken off again:\n" + String.join("\n",
@@ -372,6 +445,119 @@ public class InboxService {
         messages.save(message);
         log.info("Inbox undo, familyId={}, takenOff={}", family.getId(), takenOff.size());
         return properties.getProcessedLabel();
+    }
+
+    /** A parent's decisions on what waits, applied as the app's approval would; then the parents are told. */
+    private String decide(Family family, ReceivedMail mail, InboxMessage first, List<InboxImport> waiting,
+                          List<ReplyReading.Decision> decisions, String note, FamilyMember parent) {
+        List<FamilyMember> familyMembers = members.findByFamily(family);
+        List<String> added = new ArrayList<>();
+        List<String> turnedDown = new ArrayList<>();
+        List<String> problems = new ArrayList<>();
+        Set<Integer> decided = new HashSet<>();
+        for (ReplyReading.Decision decision : decisions) {
+            // Only the numbers the email showed, each once; anything else is not a decision.
+            if (decision.number() < 1 || decision.number() > waiting.size() || decision.action() == null
+                    || decision.action() == ReplyReading.Action.WAIT || !decided.add(decision.number())) {
+                continue;
+            }
+            InboxImport proposal = waiting.get(decision.number() - 1);
+            MailReading.ReadEvent event = decision.event() == null ? review.readEvent(proposal) : decision.event();
+            if (decision.action() == ReplyReading.Action.TURN_DOWN) {
+                review.turnDown(proposal, parent);
+                imports.save(proposal);
+                turnedDown.add(describe(review.readEvent(proposal), familyMembers));
+                continue;
+            }
+            try {
+                review.add(family, proposal, event, null, parent);
+                imports.save(proposal);
+                added.add(describe(event, familyMembers));
+            } catch (BadRequestException e) {
+                problems.add(describe(event, familyMembers) + " could not go on the calendar: it needs a date and,"
+                        + " unless it lasts all day, a start time.");
+            }
+        }
+        List<InboxImport> stillWaiting = waiting.stream()
+                .filter(proposal -> proposal.getStatus() == InboxImportStatus.PENDING).toList();
+        InboxMessage message = record(family, mail, InboxOutcome.DECIDED, added.size() + " added, "
+                + turnedDown.size() + " turned down, " + stillWaiting.size() + " still waiting", first);
+
+        StringBuilder text = new StringBuilder("Hi from the Family Hub.\n\n");
+        if (!added.isEmpty()) {
+            text.append("Added to the calendar:\n");
+            added.forEach(line -> text.append("  - ").append(line).append('\n'));
+            text.append('\n');
+        }
+        if (!turnedDown.isEmpty()) {
+            text.append("Turned down:\n");
+            turnedDown.forEach(line -> text.append("  - ").append(line).append('\n'));
+            text.append('\n');
+        }
+        problems.forEach(problem -> text.append(problem).append('\n'));
+        if (!note.isEmpty()) {
+            text.append(note).append('\n');
+        }
+        if (!problems.isEmpty() || !note.isEmpty()) {
+            text.append('\n');
+        }
+        if (!stillWaiting.isEmpty()) {
+            if (added.isEmpty() && turnedDown.isEmpty() && problems.isEmpty() && note.isEmpty()) {
+                text.append("Nothing was changed: the reply did not say what to do with them.\n\n");
+            }
+            text.append("Still waiting for a parent to check:\n").append(waitingList(stillWaiting, familyMembers))
+                    .append('\n').append(HOW_TO_DECIDE).append('\n');
+        }
+        if (!added.isEmpty()) {
+            text.append("Reply UNDO to this email to take the added events off the calendar.\n");
+        }
+        message.setReplyMessageId(sendReply(family, mail, text.toString(), true));
+        messages.save(message);
+        log.info("Inbox reply decided, familyId={}, added={}, turnedDown={}, waiting={}", family.getId(),
+                added.size(), turnedDown.size(), stillWaiting.size());
+        return properties.getProcessedLabel();
+    }
+
+    /** A reply that decided nothing, recorded, with the reason told to its sender. */
+    private String notDecided(Family family, ReceivedMail mail, InboxMessage first, String detail, String text,
+                              boolean copyParents) {
+        InboxMessage message = record(family, mail, InboxOutcome.UNPROCESSED, detail, first);
+        message.setReplyMessageId(sendReply(family, mail, text, copyParents));
+        messages.save(message);
+        return properties.getUnprocessedLabel();
+    }
+
+    private static List<ReplyReading.Decision> every(List<InboxImport> waiting, ReplyReading.Action action) {
+        List<ReplyReading.Decision> decisions = new ArrayList<>();
+        for (int number = 1; number <= waiting.size(); number++) {
+            decisions.add(new ReplyReading.Decision(number, action, null));
+        }
+        return decisions;
+    }
+
+    /** The family's parent with this address (Gmail has already verified it sent the message). */
+    private Optional<FamilyMember> parentWithAddress(Family family, String address) {
+        return members.findByFamily(family).stream()
+                .filter(member -> member.getRole() == MemberRole.PARENT && member.getEmail() != null
+                        && member.getEmail().trim().equalsIgnoreCase(address))
+                .findFirst();
+    }
+
+    /** Waiting events numbered as a reply refers to them, each with why it waits. */
+    private String waitingList(List<InboxImport> waiting, List<FamilyMember> familyMembers) {
+        StringBuilder list = new StringBuilder();
+        List<InboxImport> listed = waiting.stream().sorted(LISTED).toList();
+        for (int i = 0; i < listed.size(); i++) {
+            InboxImport proposal = listed.get(i);
+            MailReading.ReadEvent event = review.readEvent(proposal);
+            boolean readable = InboxEventMapper.toRequest(event, familyMembers, proposal.getMessage().getSender(),
+                    proposal.getMessage().getSubject()).isPresent();
+            String why = event.uncertainty() == null || event.uncertainty().isBlank()
+                    ? (readable ? "" : "the date or time could not be read") : event.uncertainty();
+            list.append("  ").append(i + 1).append(". ").append(describe(event, familyMembers))
+                    .append(why.isBlank() ? "" : " (" + why + ")").append('\n');
+        }
+        return list.toString();
     }
 
     /**
@@ -448,7 +634,14 @@ public class InboxService {
     }
 
     private InboxMessage record(Family family, ReceivedMail mail, InboxOutcome outcome, String detail) {
+        return record(family, mail, outcome, detail, null);
+    }
+
+    /** Records a message; {@code answers} is the message a reply's conversation began with. */
+    private InboxMessage record(Family family, ReceivedMail mail, InboxOutcome outcome, String detail,
+                                InboxMessage answers) {
         InboxMessage message = new InboxMessage();
+        message.setAnswers(answers);
         message.setFamily(family);
         message.setMessageId(truncate(mail.messageId(), 998));
         message.setSender(truncate(mail.from(), 320));

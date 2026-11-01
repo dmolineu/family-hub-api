@@ -43,7 +43,8 @@ import java.util.regex.Pattern;
 /**
  * A parent's side of the family inbox: what it did and what waits, approving a proposed
  * event (as read or corrected), turning one down, undoing an added one, and choosing
- * which other addresses may send. Every change takes a parent's PIN.
+ * which other addresses may send. Every change takes a parent's PIN; a parent's reply
+ * to the inbox's email decides through {@link #add} and {@link #turnDown} instead.
  */
 @Slf4j
 @Service
@@ -122,22 +123,40 @@ public class InboxReviewService {
                 request.startTime() != null ? request.startTime() : read.startTime(),
                 request.endTime() != null ? request.endTime() : read.endTime(),
                 read.location(), read.people(), read.confidence(), read.uncertainty());
+        add(family, proposal, corrected, request.memberId(), parent);
+        log.info("Inbox proposal approved, importId={}, familyId={}", id, family.getId());
+        return toResponse(imports.save(proposal));
+    }
+
+    /**
+     * Puts a waiting event on the calendar as given, decided by this parent: the app's
+     * approval after the PIN, and a parent's emailed reply after its verified address.
+     * The caller saves the import.
+     *
+     * @param memberId who it is for, overriding the event's people; null keeps them
+     * @throws BadRequestException when it still lacks a date or, unless all day, a start time
+     */
+    void add(Family family, InboxImport proposal, MailReading.ReadEvent corrected, UUID memberId,
+             FamilyMember parent) {
         List<FamilyMember> familyMembers = members.findByFamily(family);
         CalendarEventRequest event = InboxEventMapper.toRequest(corrected, familyMembers,
                         proposal.getMessage().getSender(), proposal.getMessage().getSubject())
                 .orElseThrow(() -> new BadRequestException("Fill in the date and, unless it lasts all day, the"
                         + " start time first."));
-        if (request.memberId() != null) {
+        if (memberId != null) {
             event = new CalendarEventRequest(event.title(), event.startTime(), event.endTime(), event.date(),
-                    request.memberId(), event.isAllDay(), event.location(), event.endDate(), event.recurrenceRule(),
+                    memberId, event.isAllDay(), event.location(), event.endDate(), event.recurrenceRule(),
                     event.description());
         }
         CalendarEventResponse created = calendarEvents.addCalendarEvent(event, family);
         proposal.setTitle(event.title());
         proposal.setCalendarEventId(created.id());
         decide(proposal, InboxImportStatus.ADDED, parent);
-        log.info("Inbox proposal approved, importId={}, familyId={}", id, family.getId());
-        return toResponse(imports.save(proposal));
+    }
+
+    /** Turns a waiting event down, decided by this parent (in the app or by email). The caller saves it. */
+    void turnDown(InboxImport proposal, FamilyMember parent) {
+        decide(proposal, InboxImportStatus.REJECTED, parent);
     }
 
     /** Turns a proposed event down. */
@@ -146,7 +165,7 @@ public class InboxReviewService {
         Family family = managed(principal);
         FamilyMember parent = parentPinService.verify(family, request.approverMemberId(), request.pin());
         InboxImport proposal = waiting(family, id);
-        decide(proposal, InboxImportStatus.REJECTED, parent);
+        turnDown(proposal, parent);
         return toResponse(imports.save(proposal));
     }
 
@@ -232,7 +251,8 @@ public class InboxReviewService {
         proposal.setDecidedBy(parent.getId());
     }
 
-    private MailReading.ReadEvent readEvent(InboxImport proposal) {
+    /** What the reader proposed for a waiting event, as stored with it. */
+    MailReading.ReadEvent readEvent(InboxImport proposal) {
         try {
             if (proposal.getDetails() != null) {
                 return json.readValue(proposal.getDetails(), MailReading.ReadEvent.class);

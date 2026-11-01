@@ -82,6 +82,8 @@ public class InboxService {
     /** A reply turning all that waits down: "No thanks", "reject". */
     private static final Pattern TURN_DOWN = Pattern.compile(
             "(no|nope|reject(ed)?|decline|skip)( (it|them|all|both|please|thanks|thank you))*");
+    /** "event" or "events" as a word of the subject, "#event" included; not "prevent" or "eventually". */
+    private static final Pattern EVENT_WORD = Pattern.compile("\\bevents?\\b");
     private static final String HOW_TO_DECIDE = "A parent can reply APPROVED to add them as listed, say what to"
             + " change (\"it starts at 5:30 PM\", \"only the first one\"), or reply NO to turn them down. They are"
             + " in the app too (Family inbox).\n";
@@ -198,7 +200,11 @@ public class InboxService {
         return known && verifier.verified(from, mail.authenticationResults());
     }
 
-    /** "#photo" says so; otherwise only pictures with no words of the sender's own. */
+    /**
+     * "#photo" says so; otherwise only pictures with no words of the sender's own. A
+     * subject saying "event" counts as words, with or without the "#" (user, 2026-11-01):
+     * "Add event" on a shared screenshot means a flyer, not a photo for the frame.
+     */
     private static boolean isPhotoMessage(String subject, MailContent content, List<MailContent.Attachment> pictures) {
         if (pictures.isEmpty()) {
             return false;
@@ -207,7 +213,7 @@ public class InboxService {
         if (tags.contains("#photo")) {
             return true;
         }
-        if (tags.contains("#event") || tags.contains("#recipe")) {
+        if (EVENT_WORD.matcher(tags).find() || tags.contains("#recipe")) {
             return false;
         }
         boolean onlyPictures = pictures.size() == content.attachments().size();

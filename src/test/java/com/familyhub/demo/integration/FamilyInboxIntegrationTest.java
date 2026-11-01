@@ -341,6 +341,26 @@ class FamilyInboxIntegrationTest {
     }
 
     @Test
+    void aScreenshotWhoseSubjectSaysEventIsReadForEventsNotKeptAsAPhoto() throws Exception {
+        for (String subject : List.of("Add event", "#event")) {
+            String title = "Open house " + subject.length();
+            ScriptedReader.NEXT.set(events(
+                    timed(title, "2027-06-05", "10:00 AM", "11:00 AM", MailReading.Confidence.HIGH, "")));
+            int before = photoCount();
+            int readerCalls = ScriptedReader.CALLS.get();
+            // A phone's share sheet: one screenshot, the subject, and no words in the body.
+            hub.deliver(mail(DAD, GMAIL_VERIFIED, "<openhouse-" + subject.length() + "@example.com>", subject, "",
+                    jpegPart("Screenshot_20270601.jpg", jpeg(1080, 2400))));
+
+            poller.pollNow();
+
+            assertThat(ScriptedReader.CALLS.get()).as(subject).isEqualTo(readerCalls + 1);
+            assertThat(photoCount()).as(subject).isEqualTo(before);
+            assertThat(eventTitles("2027-06-01", "2027-06-30")).as(subject).contains(title);
+        }
+    }
+
+    @Test
     void aParentRepliesApprovedAndTheWaitingEventsGoOnTheCalendar() throws Exception {
         ScriptedReader.NEXT.set(events(
                 allDay("Parade of Lights", "2027-12-13", MailReading.Confidence.MEDIUM, "No start time"),

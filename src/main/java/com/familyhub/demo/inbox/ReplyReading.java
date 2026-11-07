@@ -5,24 +5,31 @@ import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import java.util.List;
 
 /**
- * What the reader made of a parent's reply: a decision for each waiting event, and a
- * note on anything it could not apply. This is the structured output's schema, so
- * every field is always present.
+ * What the reader made of a parent's reply: a decision for each event the inbox listed
+ * (on the calendar already, or waiting), and a note on anything it could not apply. This
+ * is the structured output's schema, so every field is always present.
  */
 public record ReplyReading(
-        @JsonPropertyDescription("One decision per waiting event, by its number")
+        @JsonPropertyDescription("One decision per listed event, by its number")
         List<Decision> decisions,
         @JsonPropertyDescription("One short sentence for the parent on anything in the reply that could not be"
                 + " applied, or a question it asked; otherwise \"\"")
         String note) {
 
+    /**
+     * ADD: the event belongs on the calendar as the decision's event says (a waiting one
+     * approved, or one on the calendar corrected). TURN_DOWN: it does not (a waiting one
+     * turned down, or one on the calendar taken off). WAIT: the reply leaves it as it is.
+     */
     public enum Action { ADD, TURN_DOWN, WAIT }
 
     public record Decision(
-            @JsonPropertyDescription("The waiting event's number, from 1")
+            @JsonPropertyDescription("The event's number, as the inbox's email listed it")
             int number,
-            @JsonPropertyDescription("ADD when the reply approves it, as listed or with changes; TURN_DOWN when the"
-                    + " reply says not to add it; WAIT when the reply does not decide it")
+            @JsonPropertyDescription("For a waiting event: ADD when the reply approves it, as listed or with"
+                    + " changes; TURN_DOWN when it says not to add it. For an event on the calendar: ADD when the"
+                    + " reply corrects it; TURN_DOWN when it says to take it off. WAIT when the reply leaves it as"
+                    + " it is")
             Action action,
             @JsonPropertyDescription("The event with the reply's changes applied; exactly as listed when it"
                     + " changes nothing")

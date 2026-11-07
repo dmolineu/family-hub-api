@@ -18,8 +18,8 @@ import java.util.UUID;
 
 /**
  * One thing a message added, or proposed: a photo, an event or a recipe. Undoing a
- * message takes off everything it added; an event waiting for review keeps the
- * reader's proposal in {@link #details}.
+ * message takes off everything it added; an event keeps the reader's proposal in
+ * {@link #details}, which a waiting one is decided from.
  */
 @Entity
 @Table(name = "inbox_import")
@@ -50,7 +50,7 @@ public class InboxImport {
     @Column(nullable = false, length = 200)
     private String title;
 
-    /** The reader's proposal as JSON, for an import waiting for review. */
+    /** The reader's proposal as JSON, for an event (added or waiting for review). */
     @Column(columnDefinition = "TEXT")
     private String details;
 

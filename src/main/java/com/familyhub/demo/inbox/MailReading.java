@@ -42,7 +42,9 @@ public record MailReading(
             List<String> people,
             @JsonPropertyDescription("HIGH only when the date and any time are written plainly and certain")
             Confidence confidence,
-            @JsonPropertyDescription("For MEDIUM or LOW, one short sentence saying what is unclear; otherwise \"\"")
+            @JsonPropertyDescription("One short sentence on what a parent should check: for MEDIUM or LOW what is"
+                    + " unclear; for HIGH only a doubt the email leaves open, such as a holiday week it does not"
+                    + " mention; otherwise \"\"")
             String uncertainty) {
     }
 

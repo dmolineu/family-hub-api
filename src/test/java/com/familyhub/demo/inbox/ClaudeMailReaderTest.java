@@ -137,6 +137,18 @@ class ClaudeMailReaderTest {
     }
 
     @Test
+    void confidenceIsAboutReadingTheDateAndTimeNotWhetherTheFamilyIsSignedUp() throws Exception {
+        answer(200, output(SOCCER));
+
+        reader.read(flyer());
+
+        // A sign-up link once held a plainly dated weekly class for a parent (user, 2026-11-06). A
+        // holiday week the email never mentions is asked about, but does not hold the date either.
+        String system = JSON.readTree(requestBody.get()).path("system").asString();
+        assertThat(system).contains("signed up").contains("holiday week");
+    }
+
+    @Test
     void asksForAnAnswerShapedLikeAReading() throws Exception {
         answer(200, output(SOCCER));
 
@@ -275,10 +287,10 @@ class ClaudeMailReaderTest {
 
     private static ReplyRequest onlyThe13th(String text) {
         return new ReplyRequest(text, List.of(
-                new MailReading.ReadEvent("Parade of Lights", "2027-12-13", "", true, "", "", "The harbor",
-                        List.of(), MailReading.Confidence.MEDIUM, "No start time"),
-                new MailReading.ReadEvent("Parade of Lights", "2027-12-20", "", true, "", "", "The harbor",
-                        List.of(), MailReading.Confidence.MEDIUM, "No start time")),
+                new ReplyRequest.Listed(1, false, new MailReading.ReadEvent("Parade of Lights", "2027-12-13", "",
+                        true, "", "", "The harbor", List.of(), MailReading.Confidence.MEDIUM, "No start time")),
+                new ReplyRequest.Listed(2, false, new MailReading.ReadEvent("Parade of Lights", "2027-12-20", "",
+                        true, "", "", "The harbor", List.of(), MailReading.Confidence.MEDIUM, "No start time"))),
                 LocalDate.of(2027, 11, 1), "America/Los_Angeles", List.of("Dad", "Mom", "Maya"));
     }
 
@@ -307,6 +319,26 @@ class ClaudeMailReaderTest {
         assertThat(decision.path("properties").path("number").path("type").asString()).isEqualTo("integer");
         assertThat(strings(decision.path("properties").path("action").path("enum")))
                 .containsExactly("ADD", "TURN_DOWN", "WAIT");
+    }
+
+    @Test
+    void readsAReplyAgainstEventsAlreadyOnTheCalendarToo() throws Exception {
+        answer(200, output(ONLY_THE_13TH));
+
+        reader.readReply(new ReplyRequest("Not the 20th", List.of(
+                new ReplyRequest.Listed(1, true, new MailReading.ReadEvent("Parade of Lights", "2027-12-13", "",
+                        false, "5:30 PM", "8:00 PM", "The harbor", List.of(), MailReading.Confidence.HIGH, "")),
+                new ReplyRequest.Listed(3, false, new MailReading.ReadEvent("Parade of Lights", "2027-12-20", "",
+                        true, "", "", "The harbor", List.of(), MailReading.Confidence.MEDIUM, "No start time"))),
+                LocalDate.of(2027, 11, 1), "America/Los_Angeles", List.of("Dad", "Mom", "Maya")));
+
+        JsonNode sent = JSON.readTree(requestBody.get());
+        String text = sent.path("content").get(0).path("text").asString();
+        // Each by the number its email showed, and whether it is on the calendar already or waits.
+        assertThat(text).contains("1. on the calendar: {").contains("3. waiting for a parent: {");
+        assertThat(sent.path("system").asString()).contains("on the calendar").contains("take it off")
+                // "The 16th starts at 3" moves a 2:15-3:25 class to 3:00-4:10, not to an hour-long 3-4.
+                .contains("keep its length");
     }
 
     @Test

@@ -10,7 +10,7 @@ public enum InboxOutcome {
     RECIPE,
     /** A reply asking to undo what an earlier message added. */
     UNDO,
-    /** A parent's reply deciding the events an earlier message left waiting. */
+    /** A parent's reply deciding the events an earlier message left waiting, or correcting those it added. */
     DECIDED,
     /** From an address the family has not allowed, or not verifiably from it; not read. */
     UNRECOGNISED,

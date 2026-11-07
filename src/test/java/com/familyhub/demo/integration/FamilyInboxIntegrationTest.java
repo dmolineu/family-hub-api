@@ -318,6 +318,92 @@ class FamilyInboxIntegrationTest {
         assertThat(reply.getRecipients(Message.RecipientType.CC)).extracting(Object::toString).contains(MOM);
         String body = GreenMailUtil.getBody(reply);
         assertThat(body).contains("Soccer practice").contains("Picture day").contains("UNDO");
+        // One numbering for everything the flyer held, so a reply can name an added event as well.
+        assertThat(text(reply)).contains("  1. Soccer practice").contains("  2. Picture day");
+    }
+
+    @Test
+    void sureEventsGoOnWithoutApprovalAndAParentsReplyCorrectsThem() throws Exception {
+        // A weekly class whose email also links a sign-up form: its dates are plain, so all go on.
+        ScriptedReader.NEXT.set(events(
+                timed("Flag football", "2027-11-08", "2:15 PM", "3:25 PM", MailReading.Confidence.HIGH, "Kid"),
+                timed("Flag football", "2027-11-15", "2:15 PM", "3:25 PM", MailReading.Confidence.HIGH, "Kid"),
+                timed("Flag football", "2027-11-22", "2:15 PM", "3:25 PM", MailReading.Confidence.HIGH, "Kid")));
+        hub.deliver(mail(MOM, GMAIL_VERIFIED, "<football-1@example.com>", "Fwd: flag football",
+                "Mondays after school. Register here.", pdfPart()));
+        poller.pollNow();
+
+        assertThat(eventDates("2027-11-01", "2027-11-30", "Flag football"))
+                .containsExactlyInAnyOrder("2027-11-08", "2027-11-15", "2027-11-22");
+        MimeMessage confirmation = latestReplyTo(MOM);
+        // Numbered so a reply can say which; nothing waits for APPROVED, and it says how to correct them.
+        assertThat(text(confirmation)).contains("Added to the calendar").contains("  1. Flag football")
+                .contains("  3. Flag football").doesNotContain("APPROVED").doesNotContain("Waiting")
+                .contains("what to change").contains("UNDO");
+        ScriptedReader.NEXT_REPLY.set(new ReplyReading(List.of(
+                // The reader repeating an event as it is changes nothing.
+                new ReplyReading.Decision(1, ReplyReading.Action.ADD,
+                        timed("Flag football", "2027-11-08", "2:15 PM", "3:25 PM", MailReading.Confidence.HIGH, "Kid")),
+                new ReplyReading.Decision(2, ReplyReading.Action.ADD,
+                        timed("Flag football", "2027-11-15", "3:00 PM", "4:10 PM", MailReading.Confidence.HIGH, "Kid")),
+                new ReplyReading.Decision(3, ReplyReading.Action.TURN_DOWN, null)), ""));
+
+        // Dad was copied on the confirmation Mom's forward got; a parent's reply corrects it.
+        hub.deliver(replyingTo(confirmation.getMessageID(), DAD, GMAIL_VERIFIED, "<football-fix@example.com>",
+                "Re: Fwd: flag football", "The 15th starts at 3, and there's none on the 22nd\n\n"
+                        + "On Fri, Nov 6, 2026 at 9:36 PM Family Hub <hub@localhost> wrote:\n> 1. Flag football"));
+        poller.pollNow();
+
+        // The reader sees the events as they are on the calendar, by the numbers the email showed.
+        ReplyRequest asked = ScriptedReader.LAST_REPLY.get();
+        assertThat(asked.text()).isEqualTo("The 15th starts at 3, and there's none on the 22nd");
+        assertThat(asked.events()).extracting(ReplyRequest.Listed::number).containsExactly(1, 2, 3);
+        assertThat(asked.events()).allSatisfy(listed -> {
+            assertThat(listed.onCalendar()).isTrue();
+            assertThat(listed.event().startTime()).isEqualTo("2:15 PM");
+            assertThat(listed.event().people()).containsExactly("Kid");
+        });
+        assertThat(eventDates("2027-11-01", "2027-11-30", "Flag football"))
+                .containsExactlyInAnyOrder("2027-11-08", "2027-11-15");
+        assertThat(eventStart("2027-11-08", "2027-11-08", "Flag football")).isEqualTo("2:15 PM");
+        assertThat(eventStart("2027-11-15", "2027-11-15", "Flag football")).isEqualTo("3:00 PM");
+        assertThat(eventMember("2027-11-15", "2027-11-15", "Flag football")).isEqualTo(memberId("Kid"));
+        String done = text(latestReplyTo(DAD));
+        assertThat(done).contains("Changed").contains("  2. Flag football").contains("3:00 PM")
+                .contains("Taken off").contains("  3. Flag football").doesNotContain("  1. Flag football");
+    }
+
+    @Test
+    void aSureEventWithAnOpenQuestionStillGoesOnAndTheReplyAsksIt() throws Exception {
+        ScriptedReader.NEXT.set(events(new MailReading.ReadEvent("Art club", "2027-11-23", "", false, "3:30 PM",
+                "4:30 PM", "", List.of(), MailReading.Confidence.HIGH,
+                "The email does not say whether there is a class in Thanksgiving week.")));
+        hub.deliver(mail(DAD, GMAIL_VERIFIED, "<art-1@example.com>", "Art club", "Tuesdays all fall", pdfPart()));
+
+        poller.pollNow();
+
+        assertThat(eventTitles("2027-11-01", "2027-11-30")).contains("Art club");
+        assertThat(text(latestReplyTo(DAD))).contains("  1. Art club")
+                .contains("Worth checking: The email does not say whether there is a class in Thanksgiving week.")
+                .doesNotContain("Waiting");
+    }
+
+    @Test
+    void onlyAParentCanCorrectAddedEventsByEmail() throws Exception {
+        ScriptedReader.NEXT.set(events(
+                timed("Chess club", "2027-10-12", "3:00 PM", "4:00 PM", MailReading.Confidence.HIGH, "Kid")));
+        hub.deliver(mail(KID, GMAIL_VERIFIED, "<chess-1@example.com>", "Chess club", "Tuesday", pdfPart()));
+        poller.pollNow();
+        MimeMessage confirmation = latestReplyTo(KID);
+        int readerCalls = ScriptedReader.CALLS.get();
+
+        hub.deliver(replyingTo(confirmation.getMessageID(), KID, GMAIL_VERIFIED, "<chess-kid@example.com>",
+                "Re: Chess club", "It starts at 4"));
+        poller.pollNow();
+
+        assertThat(ScriptedReader.CALLS.get()).isEqualTo(readerCalls);
+        assertThat(eventStart("2027-10-01", "2027-10-31", "Chess club")).isEqualTo("3:00 PM");
+        assertThat(text(latestReplyTo(KID))).containsIgnoringCase("only a parent");
     }
 
     @Test
@@ -419,7 +505,8 @@ class FamilyInboxIntegrationTest {
         // The reader is given the parent's own words and the waiting events in the confirmation's order.
         ReplyRequest asked = ScriptedReader.LAST_REPLY.get();
         assertThat(asked.text()).isEqualTo("Only the 13th, it starts at 5:30, for Mom");
-        assertThat(asked.waiting()).extracting(MailReading.ReadEvent::date).containsExactly("2027-11-13", "2027-11-20");
+        assertThat(asked.events()).extracting(listed -> listed.event().date())
+                .containsExactly("2027-11-13", "2027-11-20");
         assertThat(eventDates("2027-11-01", "2027-11-30", "Boat parade")).containsExactly("2027-11-13");
         assertThat(eventStart("2027-11-01", "2027-11-30", "Boat parade")).isEqualTo("5:30 PM");
         assertThat(eventMember("2027-11-01", "2027-11-30", "Boat parade")).isEqualTo(memberId("Mom"));
@@ -640,6 +727,11 @@ class FamilyInboxIntegrationTest {
         List<String> ids = JsonPath.read(mockMvc.perform(get("/api/family").header("Authorization", "Bearer " + token))
                 .andReturn().getResponse().getContentAsString(), "$.data.members[?(@.name == '" + name + "')].id");
         return ids.getFirst();
+    }
+
+    /** A message's text as its reader sees it, without the mail encoding's line wrapping. */
+    private static String text(MimeMessage message) throws Exception {
+        return message.getContent().toString();
     }
 
     /** The newest message the inbox sent to this address. */

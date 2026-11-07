@@ -37,6 +37,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -44,7 +45,8 @@ import java.util.regex.Pattern;
  * A parent's side of the family inbox: what it did and what waits, approving a proposed
  * event (as read or corrected), turning one down, undoing an added one, and choosing
  * which other addresses may send. Every change takes a parent's PIN; a parent's reply
- * to the inbox's email decides through {@link #add} and {@link #turnDown} instead.
+ * to the inbox's email decides through {@link #add} and {@link #turnDown} instead, and
+ * corrects what was added through {@link #change} and {@link #takeOff}.
  */
 @Slf4j
 @Service
@@ -152,6 +154,85 @@ public class InboxReviewService {
         proposal.setTitle(event.title());
         proposal.setCalendarEventId(created.id());
         decide(proposal, InboxImportStatus.ADDED, parent);
+    }
+
+    /**
+     * Applies a parent's emailed correction to an event the inbox added, keeping what a
+     * correction does not speak to (the event's description, any repeat rule). The caller
+     * saves the import.
+     *
+     * @return false when the correction leaves the event as it is
+     * @throws BadRequestException       when the correction lacks a date or, unless all day, a start time
+     * @throws ResourceNotFoundException when the event is no longer on the calendar
+     */
+    boolean change(Family family, InboxImport added, MailReading.ReadEvent corrected, FamilyMember parent) {
+        List<FamilyMember> familyMembers = members.findByFamily(family);
+        String sender = added.getMessage().getSender();
+        String subject = added.getMessage().getSubject();
+        CalendarEventRequest wanted = InboxEventMapper.toRequest(corrected, familyMembers, sender, subject)
+                .orElseThrow(() -> new BadRequestException("A correction needs the date and, unless it lasts all"
+                        + " day, the start time."));
+        CalendarEventResponse existing = calendarEvents.getEventById(added.getCalendarEventId(), family);
+        // Compared as calendar requests, so "2:15 PM" read back from the calendar equals the reader's.
+        boolean same = InboxEventMapper.toRequest(asRead(existing, added, familyMembers), familyMembers, sender,
+                subject).filter(wanted::equals).isPresent();
+        if (same) {
+            return false;
+        }
+        calendarEvents.updateCalendarEvent(new CalendarEventRequest(wanted.title(), wanted.startTime(),
+                wanted.endTime(), wanted.date(), wanted.memberId(), wanted.isAllDay(), wanted.location(),
+                wanted.endDate(), existing.recurrenceRule(), existing.description()), existing.id(), family);
+        added.setTitle(wanted.title());
+        added.setDetails(toJson(corrected));
+        decide(added, InboxImportStatus.ADDED, parent);
+        return true;
+    }
+
+    /**
+     * An event the inbox added, as it is on the calendar now (a parent may have edited it
+     * in the app since), with any question the reader asked about it; empty once it is no
+     * longer there.
+     */
+    Optional<MailReading.ReadEvent> onCalendar(Family family, InboxImport added) {
+        if (added.getKind() != InboxImportKind.EVENT || added.getStatus() != InboxImportStatus.ADDED
+                || added.getCalendarEventId() == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(asRead(calendarEvents.getEventById(added.getCalendarEventId(), family), added,
+                    members.findByFamily(family)));
+        } catch (ResourceNotFoundException e) {
+            return Optional.empty();
+        }
+    }
+
+    /** A calendar event in the reader's terms, for its member and with the import's confidence and question. */
+    private MailReading.ReadEvent asRead(CalendarEventResponse event, InboxImport added,
+                                         List<FamilyMember> familyMembers) {
+        List<String> people = familyMembers.stream().filter(member -> member.getId().equals(event.memberId()))
+                .map(FamilyMember::getName).toList();
+        String uncertainty = readEvent(added).uncertainty();
+        return new MailReading.ReadEvent(event.title(), event.date().toString(),
+                event.endDate() == null ? "" : event.endDate().toString(), event.isAllDay(),
+                event.isAllDay() ? "" : event.startTime(), event.isAllDay() ? "" : event.endTime(),
+                event.location() == null ? "" : event.location(), people, confidence(added),
+                uncertainty == null ? "" : uncertainty);
+    }
+
+    private static MailReading.Confidence confidence(InboxImport item) {
+        try {
+            return item.getConfidence() == null ? null : MailReading.Confidence.valueOf(item.getConfidence());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private String toJson(MailReading.ReadEvent event) {
+        try {
+            return json.writeValueAsString(event);
+        } catch (JacksonException e) {
+            return null;
+        }
     }
 
     /** Turns a waiting event down, decided by this parent (in the app or by email). The caller saves it. */

@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Whose lanes a Google event goes in. An event the hub wrote names its members in a
  * shared extended property, which wins. Otherwise it belongs to the calendar's lane
  * members. Either way, family members invited by email who have not declined are added.
+ * The tag's order is kept (its first member leads); others follow in the family's order.
  * Ids that are not this family's members are ignored, so a member deleted later, or a
  * tag edited by hand in Google, never breaks a read.
  */
@@ -46,8 +47,19 @@ class MemberAttributionTest {
     void theHubsMemberTagWinsOverTheCalendarsLanes() {
         hub.getLaneMembers().add(dad);
 
+        // In the tag's order: the first one leads and gives the event its colour.
         assertThat(attribution.membersOf(tagged(maya.getId() + "," + mom.getId()), hub, family))
-                .containsExactly(mom.getId(), maya.getId());
+                .containsExactly(maya.getId(), mom.getId());
+    }
+
+    @Test
+    void invitedMembersComeAfterTheTaggedOnesInTheFamilysOrder() {
+        Event invite = tagged(maya.getId().toString())
+                .setAttendees(List.of(new EventAttendee().setEmail("mom@example.com"),
+                        new EventAttendee().setEmail("dad@example.com")));
+
+        assertThat(attribution.membersOf(invite, hub, family))
+                .containsExactly(maya.getId(), dad.getId(), mom.getId());
     }
 
     @Test

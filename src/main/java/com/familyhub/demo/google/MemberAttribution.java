@@ -6,8 +6,10 @@ import com.google.api.services.calendar.model.Event;
 import com.google.api.services.calendar.model.EventAttendee;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -33,11 +35,13 @@ public class MemberAttribution {
      * @param event         the Google event
      * @param calendar      the cached calendar it is on
      * @param familyMembers the family's members, in the order results are returned
-     * @return the members' ids, in the family's order
+     * @return the members' ids: the tag's in its order (its first leads and gives the event
+     *         its colour), then the others in the family's order
      */
     public List<UUID> membersOf(Event event, GoogleCalendar calendar, List<FamilyMember> familyMembers) {
         Set<UUID> family = familyMembers.stream().map(FamilyMember::getId).collect(Collectors.toSet());
-        Set<UUID> chosen = new HashSet<>(tagged(event, family));
+        Set<UUID> taggedIds = tagged(event, family);
+        Set<UUID> chosen = new HashSet<>(taggedIds);
         if (chosen.isEmpty()) {
             calendar.getLaneMembers().stream().map(FamilyMember::getId).filter(family::contains).forEach(chosen::add);
         }
@@ -53,7 +57,10 @@ public class MemberAttribution {
                         .forEach(member -> chosen.add(member.getId()));
             }
         }
-        return familyMembers.stream().map(FamilyMember::getId).filter(chosen::contains).toList();
+        List<UUID> ordered = new ArrayList<>(taggedIds);
+        familyMembers.stream().map(FamilyMember::getId)
+                .filter(id -> chosen.contains(id) && !taggedIds.contains(id)).forEach(ordered::add);
+        return List.copyOf(ordered);
     }
 
     /**
@@ -74,7 +81,8 @@ public class MemberAttribution {
         if (value == null) {
             return Set.of();
         }
-        Set<UUID> ids = new HashSet<>();
+        // Insertion order: the tag's order is the order the hub was given them in.
+        Set<UUID> ids = new LinkedHashSet<>();
         for (String part : value.split(",")) {
             try {
                 UUID id = UUID.fromString(part.trim());

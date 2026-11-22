@@ -3,14 +3,17 @@ package com.familyhub.demo.service;
 import com.familyhub.demo.dto.calendar.CalendarEventResponse;
 import com.familyhub.demo.exception.BadRequestException;
 import com.familyhub.demo.exception.ResourceNotFoundException;
+import com.familyhub.demo.google.GoogleEventCacheMapper;
 import com.familyhub.demo.google.GoogleRecurrenceExpander;
 import com.familyhub.demo.google.GoogleRecurrenceExpander.Occurrence;
 import com.familyhub.demo.google.GoogleRecurrenceExpander.Window;
+import com.familyhub.demo.model.CalendarEvent;
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.model.FamilyMember;
 import com.familyhub.demo.model.GoogleCalendar;
 import com.familyhub.demo.model.GoogleCalendarAccess;
 import com.familyhub.demo.model.GoogleEvent;
+import com.familyhub.demo.repository.CalendarEventRepository;
 import com.familyhub.demo.repository.FamilyMemberRepository;
 import com.familyhub.demo.repository.GoogleCalendarAccessRepository;
 import com.familyhub.demo.repository.GoogleCalendarRepository;
@@ -53,6 +56,9 @@ public class CalendarQueryService {
     private final GoogleEventRepository events;
     private final FamilyMemberRepository members;
     private final GoogleRecurrenceExpander expander;
+    private final CalendarEventRepository legacy;
+    private final LegacyEventConverter converter;
+    private final GoogleEventCacheMapper mapper;
 
     /**
      * Creates the service.
@@ -62,15 +68,22 @@ public class CalendarQueryService {
      * @param events    cached events
      * @param members   family members, to check a member filter
      * @param expander  expands series
+     * @param legacy    the family's own events waiting to be copied to Google
+     * @param converter shows them as their Google copies will look
+     * @param mapper    Google event to (display) row
      */
     public CalendarQueryService(GoogleCalendarRepository calendars, GoogleCalendarAccessRepository access,
                                 GoogleEventRepository events, FamilyMemberRepository members,
-                                GoogleRecurrenceExpander expander) {
+                                GoogleRecurrenceExpander expander, CalendarEventRepository legacy,
+                                LegacyEventConverter converter, GoogleEventCacheMapper mapper) {
         this.calendars = calendars;
         this.access = access;
         this.events = events;
         this.members = members;
         this.expander = expander;
+        this.legacy = legacy;
+        this.converter = converter;
+        this.mapper = mapper;
     }
 
     /**
@@ -100,14 +113,14 @@ public class CalendarQueryService {
             }
         }
         List<GoogleCalendar> shown = calendars.findEnabledByFamily(family.getId());
-        if (shown.isEmpty()) {
-            return List.of();
-        }
         ZoneId familyZone = ZoneId.of(FamilyTimezoneResolver.resolveStoredTimezoneOrDefault(family.getTimezone()));
         Window window = Window.of(from, to, familyZone);
+        List<Found> found = new ArrayList<>(waitingToBeCopied(family, shown, window, familyZone));
+        if (shown.isEmpty()) {
+            return filterAndSort(dedupe(found), memberId, familyZone);
+        }
         Set<UUID> editable = editableCalendars(shown);
 
-        List<Found> found = new ArrayList<>();
         for (GoogleEvent single : events.findSinglesInWindow(shown, window.from(), window.to(), window.fromDate(),
                 window.toDate())) {
             found.add(new Found(CalendarEventResponses.forRow(single,
@@ -124,11 +137,81 @@ public class CalendarQueryService {
             }
         }
 
-        return dedupe(found).stream()
+        return filterAndSort(dedupe(found), memberId, familyZone);
+    }
+
+    private static List<CalendarEventResponse> filterAndSort(List<CalendarEventResponse> found, UUID memberId,
+                                                             ZoneId familyZone) {
+        return found.stream()
                 .filter(event -> memberId == null || event.memberIds().contains(memberId))
                 .sorted(Comparator.comparing((CalendarEventResponse event) -> startInstant(event, familyZone))
                         .thenComparing(CalendarEventResponse::title))
                 .toList();
+    }
+
+    // The family's own pre-Phase 4 events that wait to be copied to Google, shown read-only,
+    // as they will look once copied (on the default calendar, in their member's lane).
+    private List<Found> waitingToBeCopied(Family family, List<GoogleCalendar> shown, Window window,
+                                          ZoneId familyZone) {
+        List<CalendarEvent> waiting = legacy.findUncopied(family.getId());
+        if (waiting.isEmpty()) {
+            return List.of();
+        }
+        GoogleCalendar onto = shown.stream()
+                .filter(calendar -> calendar.getId().equals(family.getDefaultGoogleCalendarId()))
+                .findFirst().orElseGet(GoogleCalendar::new);
+        Map<UUID, List<CalendarEvent>> exceptions = new HashMap<>();
+        List<CalendarEvent> heads = new ArrayList<>();
+        for (CalendarEvent row : waiting) {
+            if (row.getRecurringEvent() == null) {
+                heads.add(row);
+            } else {
+                exceptions.computeIfAbsent(row.getRecurringEvent().getId(), id -> new ArrayList<>()).add(row);
+            }
+        }
+        List<Found> found = new ArrayList<>();
+        for (CalendarEvent head : heads) {
+            List<CalendarEvent> dates = exceptions.getOrDefault(head.getId(), List.of());
+            GoogleEvent row = display(converter.toGoogle(head, dates, familyZone), onto, head);
+            if (row.getRecurrence() == null) {
+                boolean inWindow = row.isAllDay()
+                        ? window.overlaps(row.getStartDate(), row.getEndDate())
+                        : window.overlaps(row.getStartAt(), row.getEndAt());
+                if (inWindow) {
+                    found.add(new Found(CalendarEventResponses.forRow(row, false, familyZone), row));
+                }
+                continue;
+            }
+            List<GoogleEvent> changed = new ArrayList<>();
+            for (CalendarEvent date : dates) {
+                if (date.isCancelled()) {
+                    continue;
+                }
+                GoogleEvent instance = display(converter.applyException(new com.google.api.services.calendar.model.Event(),
+                        date, familyZone), onto, date);
+                instance.setRecurringEventId(row.getGoogleEventId());
+                com.google.api.services.calendar.model.EventDateTime original =
+                        converter.originalStart(head, date, familyZone);
+                if (original.getDateTime() != null) {
+                    instance.setOriginalStartAt(Instant.ofEpochMilli(original.getDateTime().getValue()));
+                } else {
+                    instance.setOriginalStartDate(LocalDate.parse(original.getDate().toStringRfc3339()));
+                }
+                changed.add(instance);
+            }
+            for (Occurrence occurrence : expander.expand(row, changed, familyZone, window)) {
+                found.add(new Found(CalendarEventResponses.forOccurrence(row, occurrence, false, familyZone), row));
+            }
+        }
+        return found;
+    }
+
+    private GoogleEvent display(com.google.api.services.calendar.model.Event event, GoogleCalendar onto,
+                                CalendarEvent source) {
+        GoogleEvent row = mapper.toCache(event, onto, new UUID[]{source.getMember().getId()}, new GoogleEvent());
+        row.setId(source.getId());
+        row.setGoogleEventId("hub-" + source.getId());
+        return row;
     }
 
     private Set<UUID> editableCalendars(List<GoogleCalendar> shown) {

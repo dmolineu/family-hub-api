@@ -71,11 +71,25 @@ public class GoogleRecurrenceExpander {
             return new Window(first.atStartOfDay(zone).toInstant(), after.atStartOfDay(zone).toInstant(), first, after);
         }
 
-        boolean overlaps(Instant start, Instant end) {
+        /**
+         * Whether a timed span overlaps the window.
+         *
+         * @param start the span's start
+         * @param end   the span's end
+         * @return true if they overlap
+         */
+        public boolean overlaps(Instant start, Instant end) {
             return start.isBefore(to) && end.isAfter(from);
         }
 
-        boolean overlaps(LocalDate start, LocalDate endExclusive) {
+        /**
+         * Whether an all-day span overlaps the window.
+         *
+         * @param start        the first day
+         * @param endExclusive the day after the last day
+         * @return true if they overlap
+         */
+        public boolean overlaps(LocalDate start, LocalDate endExclusive) {
             return start.isBefore(toDate) && endExclusive.isAfter(fromDate);
         }
     }

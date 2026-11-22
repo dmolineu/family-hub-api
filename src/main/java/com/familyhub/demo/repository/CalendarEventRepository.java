@@ -56,4 +56,24 @@ public interface CalendarEventRepository extends JpaRepository<CalendarEvent, UU
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("delete from CalendarEvent e where e.family = :family and e.source = com.familyhub.demo.model.EventSource.NATIVE")
     void deleteNativeByFamily(@Param("family") Family family);
+
+    /**
+     * Phase 4: the family's own events not yet copied to Google, changed and cancelled
+     * dates of series included.
+     *
+     * @param familyId the family's id
+     * @return the rows waiting to be copied
+     */
+    @Query("select e from CalendarEvent e where e.family.id = :familyId "
+            + "and e.source = com.familyhub.demo.model.EventSource.NATIVE and e.copiedAt is null")
+    List<CalendarEvent> findUncopied(@Param("familyId") UUID familyId);
+
+    /**
+     * Phase 4: the families with events waiting to be copied to Google.
+     *
+     * @return their ids
+     */
+    @Query("select distinct e.family.id from CalendarEvent e "
+            + "where e.source = com.familyhub.demo.model.EventSource.NATIVE and e.copiedAt is null")
+    List<UUID> findFamiliesWithUncopied();
 }

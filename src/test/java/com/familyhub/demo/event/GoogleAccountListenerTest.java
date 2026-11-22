@@ -9,6 +9,7 @@ import com.familyhub.demo.repository.GoogleCalendarRepository;
 import com.familyhub.demo.repository.GoogleOAuthTokenRepository;
 import com.familyhub.demo.service.CalendarCacheSync;
 import com.familyhub.demo.service.GoogleCalendarAdminService;
+import com.familyhub.demo.service.LegacyEventBackfill;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -24,8 +25,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * After a member connects Google, the hub reads that account's calendar list and syncs
- * the family's switched-on calendars, so a reconnect that grants the write scope shows
+ * After a member connects Google, the hub reads that account's calendar list, copies the
+ * family's own events to Google if it now may, and syncs the family's switched-on calendars, so a reconnect that grants the write scope shows
  * up within seconds instead of at the next poll. A Google failure is logged, not thrown:
  * the scheduler tries again.
  */
@@ -35,7 +36,8 @@ class GoogleAccountListenerTest {
     private final CalendarCacheSync sync = mock(CalendarCacheSync.class);
     private final GoogleOAuthTokenRepository tokens = mock(GoogleOAuthTokenRepository.class);
     private final GoogleCalendarRepository calendars = mock(GoogleCalendarRepository.class);
-    private final GoogleAccountListener listener = new GoogleAccountListener(admin, sync, tokens, calendars);
+    private final LegacyEventBackfill backfill = mock(LegacyEventBackfill.class);
+    private final GoogleAccountListener listener = new GoogleAccountListener(admin, sync, tokens, calendars, backfill);
 
     private final UUID tokenId = UUID.randomUUID();
     private final UUID familyId = UUID.randomUUID();
@@ -61,8 +63,11 @@ class GoogleAccountListenerTest {
     void theAccountsCalendarsAreReadAndTheFamilysCalendarsSynced() {
         listener.onConnected(new GoogleAccountConnected(tokenId));
 
-        verify(admin).discover(tokenId);
-        verify(sync).syncCalendar(hub.getId());
+        // Reading the calendar list first is what finds the write access the copy needs.
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(admin, backfill, sync);
+        order.verify(admin).discover(tokenId);
+        order.verify(backfill).copyFamily(familyId);
+        order.verify(sync).syncCalendar(hub.getId());
         verify(sync).syncCalendar(school.getId());
     }
 

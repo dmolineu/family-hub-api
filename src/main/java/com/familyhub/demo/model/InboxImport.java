@@ -60,6 +60,14 @@ public class InboxImport {
     @Column(name = "calendar_event_id")
     private UUID calendarEventId;
 
+    /** Phase 4: the cached Google calendar the added event is on. */
+    @Column(name = "google_calendar_id")
+    private UUID googleCalendarId;
+
+    /** Phase 4: Google's id of the added event, which survives the cache being rebuilt. */
+    @Column(name = "google_event_id", length = 1024)
+    private String googleEventId;
+
     @Column(name = "photo_id")
     private UUID photoId;
 

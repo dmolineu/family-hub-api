@@ -6,6 +6,7 @@ import com.familyhub.demo.repository.GoogleCalendarRepository;
 import com.familyhub.demo.repository.GoogleOAuthTokenRepository;
 import com.familyhub.demo.service.CalendarCacheSync;
 import com.familyhub.demo.service.GoogleCalendarAdminService;
+import com.familyhub.demo.service.LegacyEventBackfill;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
@@ -28,6 +29,7 @@ public class GoogleAccountListener {
     private final CalendarCacheSync sync;
     private final GoogleOAuthTokenRepository tokens;
     private final GoogleCalendarRepository calendars;
+    private final LegacyEventBackfill backfill;
 
     /**
      * Creates the listener.
@@ -36,13 +38,16 @@ public class GoogleAccountListener {
      * @param sync      syncs calendars
      * @param tokens    signed-in accounts
      * @param calendars cached calendars
+     * @param backfill  copies the family's own events once the account may write
      */
     public GoogleAccountListener(GoogleCalendarAdminService admin, CalendarCacheSync sync,
-                                 GoogleOAuthTokenRepository tokens, GoogleCalendarRepository calendars) {
+                                 GoogleOAuthTokenRepository tokens, GoogleCalendarRepository calendars,
+                                 LegacyEventBackfill backfill) {
         this.admin = admin;
         this.sync = sync;
         this.tokens = tokens;
         this.calendars = calendars;
+        this.backfill = backfill;
     }
 
     /**
@@ -59,7 +64,10 @@ public class GoogleAccountListener {
             if (account.isEmpty()) {
                 return;
             }
-            for (GoogleCalendar calendar : calendars.findEnabledByFamily(account.get().getMember().getFamily().getId())) {
+            java.util.UUID familyId = account.get().getMember().getFamily().getId();
+            // The reconnect that grants the write scope is what lets the family's own events go to Google.
+            backfill.copyFamily(familyId);
+            for (GoogleCalendar calendar : calendars.findEnabledByFamily(familyId)) {
                 sync.syncCalendar(calendar.getId());
             }
         } catch (RuntimeException e) {

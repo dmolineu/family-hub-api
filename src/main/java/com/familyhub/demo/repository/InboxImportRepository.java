@@ -13,6 +13,15 @@ import java.util.UUID;
 public interface InboxImportRepository extends JpaRepository<InboxImport, UUID> {
     List<InboxImport> findByMessage(InboxMessage message);
 
+    /**
+     * Phase 4: the inbox records pointing at some of the family's own events, to point
+     * them at the events' Google copies.
+     *
+     * @param calendarEventIds the events' ids
+     * @return the records
+     */
+    List<InboxImport> findByCalendarEventIdIn(java.util.Collection<UUID> calendarEventIds);
+
     List<InboxImport> findTop100ByFamilyOrderByCreatedAtDesc(Family family);
 
     Optional<InboxImport> findByIdAndFamily(UUID id, Family family);

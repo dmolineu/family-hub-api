@@ -85,4 +85,16 @@ public class CalendarEvent {
 
     @Column(columnDefinition = "TEXT")
     private String exdates;
+
+    /** Phase 4: the Google calendar this event was copied to, once copied. */
+    @Column(name = "copied_calendar_id")
+    private UUID copiedCalendarId;
+
+    /** Phase 4: Google's id of the copy. */
+    @Column(name = "copied_google_event_id", length = 1024)
+    private String copiedGoogleEventId;
+
+    /** Phase 4: when it was copied; null while it waits for an account that may write. */
+    @Column(name = "copied_at")
+    private java.time.Instant copiedAt;
 }

@@ -40,4 +40,31 @@ public interface GoogleCalendarRepository extends JpaRepository<GoogleCalendar, 
      */
     @Query("select c.id from GoogleCalendar c where c.enabled = true order by c.createdAt")
     List<UUID> findEnabledIds();
+
+    /**
+     * A family's enabled calendars, which the calendar shows.
+     *
+     * @param familyId the family's id
+     * @return its enabled calendars
+     */
+    @Query("select c from GoogleCalendar c where c.family.id = :familyId and c.enabled = true order by c.createdAt")
+    List<GoogleCalendar> findEnabledByFamily(@Param("familyId") UUID familyId);
+
+    /**
+     * Every calendar a family's accounts can see, switched on or not.
+     *
+     * @param familyId the family's id
+     * @return its calendars, oldest first
+     */
+    @Query("select c from GoogleCalendar c where c.family.id = :familyId order by c.createdAt")
+    List<GoogleCalendar> findAllByFamilyId(@Param("familyId") UUID familyId);
+
+    /**
+     * The calendars one account polls.
+     *
+     * @param tokenId the signed-in account
+     * @return its calendars
+     */
+    @Query("select c from GoogleCalendar c where c.pollingToken.id = :tokenId")
+    List<GoogleCalendar> findPolledBy(@Param("tokenId") UUID tokenId);
 }

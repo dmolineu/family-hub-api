@@ -20,3 +20,9 @@ security:
   # Opens /h2-console and allows same-origin framing; dev only.
   h2-console:
     enabled: true
+
+google:
+  calendar:
+    # Phase 4: an in-memory Google, so the browser tests can add events with no Google
+    # account. Each family that signs up is connected to it. Never in production.
+    fake: true

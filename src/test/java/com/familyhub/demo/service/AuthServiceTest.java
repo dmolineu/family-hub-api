@@ -42,6 +42,9 @@ class AuthServiceTest {
     private FamilyRepository familyRepository;
 
     @Mock
+    private org.springframework.context.ApplicationEventPublisher events;
+
+    @Mock
     private PasswordEncoder passwordEncoder;
 
     @Mock

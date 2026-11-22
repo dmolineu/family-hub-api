@@ -16,7 +16,9 @@ import com.familyhub.demo.model.Family;
 import com.familyhub.demo.model.FamilyMember;
 import com.familyhub.demo.repository.FamilyRepository;
 import com.familyhub.demo.security.LoginAttemptLimiter;
+import com.familyhub.demo.event.FamilyRegistered;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -40,6 +42,7 @@ public class AuthService {
     private final ListSeedService listSeedService;
     private final RecipeSeedService recipeSeedService;
     private final LoginAttemptLimiter loginAttemptLimiter;
+    private final ApplicationEventPublisher events;
 
     @Transactional
     public AuthResponse register(RegisterRequest registerRequest) {
@@ -71,6 +74,7 @@ public class AuthService {
             recipeSeedService.seedStarterRecipes(saved);
         }
         log.info("Family registered, familyId={}, username={}", saved.getId(), saved.getUsername());
+        events.publishEvent(new FamilyRegistered(saved.getId()));
 
         // Create JWT and return response
         String token = jwtService.generateToken(saved);

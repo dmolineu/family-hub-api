@@ -134,7 +134,7 @@ public class CalendarQueryService {
     private Set<UUID> editableCalendars(List<GoogleCalendar> shown) {
         Set<UUID> editable = new HashSet<>();
         for (GoogleCalendarAccess row : access.findByCalendars(shown)) {
-            if (row.getAccessRole().canWrite() && !row.getToken().isNeedsReauth()) {
+            if (GoogleCalendarAdminService.canWrite(row)) {
                 editable.add(row.getCalendar().getId());
             }
         }

@@ -50,6 +50,12 @@ class GoogleOAuthServiceTest {
     @Mock
     private CalendarEventRepository calendarEventRepository;
 
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher events;
+
+    @Mock
+    private GoogleCalendarAdminService calendarAdmin;
+
     private GoogleOAuthConfig config;
     private GoogleOAuthService oauthService;
 
@@ -61,7 +67,7 @@ class GoogleOAuthServiceTest {
         config.setRedirectUri("http://localhost:8080/api/google/callback");
 
         oauthService = new GoogleOAuthService(config, tokenRepository, memberRepository, encryptionService, stateStore,
-                syncedCalendarRepository, calendarEventRepository, restClient);
+                syncedCalendarRepository, calendarEventRepository, events, calendarAdmin, restClient);
     }
 
     @Test
@@ -98,7 +104,9 @@ class GoogleOAuthServiceTest {
         assertThat(url).contains("state=" + stateToken);
         assertThat(url).doesNotContain(memberId.toString());
         assertThat(url).contains("scope=");
-        assertThat(url).contains("calendar.events.readonly");
+        // Phase 4: the hub writes events, so it asks for calendar.events, not the read-only one.
+        assertThat(url).contains("calendar.events");
+        assertThat(url).doesNotContain("calendar.events.readonly");
         assertThat(url).contains("calendar.calendarlist.readonly");
     }
 
@@ -183,6 +191,80 @@ class GoogleOAuthServiceTest {
         assertThat(result.getAccessToken()).isEqualTo("enc-access-123");
         assertThat(result.getRefreshToken()).isEqualTo("enc-refresh-456");
         verify(tokenRepository).save(any(GoogleOAuthToken.class));
+    }
+
+    private void googleAnswers(GoogleTokenResponse googleResponse) {
+        RestClient.RequestBodyUriSpec postSpec = mock(RestClient.RequestBodyUriSpec.class);
+        RestClient.RequestBodySpec bodyUriSpec = mock(RestClient.RequestBodySpec.class);
+        RestClient.ResponseSpec responseSpec = mock(RestClient.ResponseSpec.class);
+        when(restClient.post()).thenReturn(postSpec);
+        when(postSpec.uri(anyString())).thenReturn(bodyUriSpec);
+        when(bodyUriSpec.header(anyString(), anyString())).thenReturn(bodyUriSpec);
+        when(bodyUriSpec.body(anyString())).thenReturn(bodyUriSpec);
+        when(bodyUriSpec.retrieve()).thenReturn(responseSpec);
+        when(responseSpec.body(GoogleTokenResponse.class)).thenReturn(googleResponse);
+    }
+
+    @Test
+    void buildAuthorizationUrl_asksForTheWriteScopeAndTheReadOnlyCalendarList() {
+        when(stateStore.generateState(any())).thenReturn("state-1");
+
+        String url = java.net.URLDecoder.decode(oauthService.buildAuthorizationUrl(UUID.randomUUID()),
+                java.nio.charset.StandardCharsets.UTF_8);
+
+        assertThat(url).contains("scope=https://www.googleapis.com/auth/calendar.events ")
+                .contains("https://www.googleapis.com/auth/calendar.calendarlist.readonly")
+                .doesNotContain("calendar.events.readonly");
+    }
+
+    @Test
+    void exchangeCodeForTokens_whenReconnecting_updatesTheAccountInPlaceAndSaysItConnected() {
+        // Calendars point at the account's row; replacing the row would leave them unpolled.
+        UUID memberId = UUID.randomUUID();
+        FamilyMember member = new FamilyMember();
+        member.setId(memberId);
+        GoogleOAuthToken existing = new GoogleOAuthToken();
+        UUID tokenId = UUID.randomUUID();
+        existing.setId(tokenId);
+        existing.setMember(member);
+        existing.setScope("https://www.googleapis.com/auth/calendar.events.readonly");
+        existing.setNeedsReauth(true);
+        when(memberRepository.findById(memberId)).thenReturn(Optional.of(member));
+        when(tokenRepository.findByMemberId(memberId)).thenReturn(Optional.of(existing));
+        when(encryptionService.encrypt(anyString())).thenAnswer(inv -> "enc-" + inv.getArgument(0));
+        when(tokenRepository.save(any(GoogleOAuthToken.class))).thenAnswer(inv -> inv.getArgument(0));
+        googleAnswers(new GoogleTokenResponse("access-2", "refresh-2", 3600,
+                "https://www.googleapis.com/auth/calendar.events"));
+
+        GoogleOAuthToken result = oauthService.exchangeCodeForTokens("auth-code", memberId);
+
+        assertThat(result.getId()).isEqualTo(tokenId);
+        assertThat(result.getAccessToken()).isEqualTo("enc-access-2");
+        assertThat(result.getRefreshToken()).isEqualTo("enc-refresh-2");
+        assertThat(result.getScope()).isEqualTo("https://www.googleapis.com/auth/calendar.events");
+        assertThat(result.isNeedsReauth()).isFalse();
+        verify(tokenRepository, never()).delete(any());
+        verify(events).publishEvent(new com.familyhub.demo.event.GoogleAccountConnected(tokenId));
+    }
+
+    @Test
+    void disconnect_handsTheAccountsCalendarsToAnotherAccountBeforeTheTokenGoes() {
+        UUID memberId = UUID.randomUUID();
+        FamilyMember member = new FamilyMember();
+        member.setId(memberId);
+        GoogleOAuthToken token = new GoogleOAuthToken();
+        token.setId(UUID.randomUUID());
+        token.setMember(member);
+        token.setRefreshToken("enc-refresh");
+        when(tokenRepository.findByMemberId(memberId)).thenReturn(Optional.of(token));
+        when(encryptionService.decrypt("enc-refresh")).thenReturn("refresh");
+        when(restClient.post()).thenThrow(new RuntimeException("revoke is best effort"));
+
+        oauthService.disconnect(memberId);
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(calendarAdmin, tokenRepository);
+        order.verify(calendarAdmin).accountRemoved(token.getId());
+        order.verify(tokenRepository).delete(token);
     }
 
     @Test

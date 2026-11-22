@@ -50,6 +50,7 @@ public class FakeGoogleCalendarGateway implements GoogleCalendarGateway {
 
     private final Map<String, FakeCalendar> calendars = new LinkedHashMap<>();
     private final Map<UUID, Map<String, GoogleAccessRole>> access = new HashMap<>();
+    private final Map<UUID, String> primaries = new HashMap<>();
     // Occurrences handed out by getInstance but not changed yet, so not stored as instances.
     private final Map<String, Event> issuedInstances = new HashMap<>();
     private long version;
@@ -78,6 +79,37 @@ public class FakeGoogleCalendarGateway implements GoogleCalendarGateway {
      */
     public synchronized void grant(GoogleOAuthToken account, String calendarId, GoogleAccessRole role) {
         access.computeIfAbsent(account.getId(), id -> new LinkedHashMap<>()).put(calendarId, role);
+    }
+
+    /**
+     * Makes a calendar the account's primary one, whose id is the account's address.
+     *
+     * @param account    the signed-in account
+     * @param calendarId Google's calendar id
+     */
+    public synchronized void markPrimary(GoogleOAuthToken account, String calendarId) {
+        primaries.put(account.getId(), calendarId);
+    }
+
+    /**
+     * Takes an account's access to a calendar away, as unsharing it in Google does.
+     *
+     * @param account    the signed-in account
+     * @param calendarId Google's calendar id
+     */
+    public synchronized void revoke(GoogleOAuthToken account, String calendarId) {
+        access.getOrDefault(account.getId(), new LinkedHashMap<>()).remove(calendarId);
+    }
+
+    /**
+     * Renames a calendar, as its owner can in Google.
+     *
+     * @param calendarId Google's calendar id
+     * @param summary    the new name
+     */
+    public synchronized void rename(String calendarId, String summary) {
+        FakeCalendar calendar = calendars.get(calendarId);
+        calendars.put(calendarId, new FakeCalendar(calendar.id(), summary, calendar.timeZone(), calendar.events()));
     }
 
     /**
@@ -278,6 +310,7 @@ public class FakeGoogleCalendarGateway implements GoogleCalendarGateway {
                     .setSummary(calendar.summary())
                     .setTimeZone(calendar.timeZone())
                     .setBackgroundColor("#9fc6e7")
+                    .setPrimary(calendarId.equals(primaries.get(account.getId())) ? Boolean.TRUE : null)
                     .setAccessRole(googleRole(role)));
         });
         return entries;

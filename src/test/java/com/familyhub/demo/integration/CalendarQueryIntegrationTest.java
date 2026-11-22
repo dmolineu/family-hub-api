@@ -3,6 +3,7 @@ package com.familyhub.demo.integration;
 import com.familyhub.demo.config.TestcontainersConfig;
 import com.familyhub.demo.dto.calendar.CalendarEventResponse;
 import com.familyhub.demo.exception.BadRequestException;
+import com.familyhub.demo.google.GoogleScopes;
 import com.familyhub.demo.model.Family;
 import com.familyhub.demo.model.FamilyColor;
 import com.familyhub.demo.model.FamilyMember;
@@ -84,7 +85,7 @@ class CalendarQueryIntegrationTest {
         account.setAccessToken("enc-access");
         account.setRefreshToken("enc-refresh");
         account.setTokenExpiry(Instant.now().plusSeconds(3600));
-        account.setScope("calendar.events");
+        account.setScope(GoogleScopes.REQUESTED);
         account = tokens.save(account);
         hub = calendar("hub", "#9fc6e7", dad);
         shared = calendar("shared", "#ff887c", dad);
@@ -227,6 +228,17 @@ class CalendarQueryIntegrationTest {
         assertThat(december(maya.getId())).extracting(CalendarEventResponse::originalStart)
                 .containsExactly("20261204T000000Z", "20261218T000000Z");
         assertThat(december(null)).extracting(CalendarEventResponse::title).containsExactly("Class", "Dad's", "Class");
+    }
+
+    @Test
+    void anAccountSignedInBeforeTheHubCouldWriteLeavesItsCalendarsReadOnly() {
+        GoogleOAuthToken old = tokens.findByMemberId(dad.getId()).orElseThrow();
+        old.setScope("https://www.googleapis.com/auth/calendar.calendarlist.readonly "
+                + "https://www.googleapis.com/auth/calendar.events.readonly");
+        tokens.save(old);
+        events.save(timed(hub, "swim", "Swim", "2026-12-03T17:00:00Z", "2026-12-03T18:00:00Z", maya));
+
+        assertThat(december(null)).singleElement().satisfies(event -> assertThat(event.canEdit()).isFalse());
     }
 
     @Test

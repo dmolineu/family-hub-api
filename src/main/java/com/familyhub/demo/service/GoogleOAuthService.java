@@ -15,6 +15,9 @@ import com.familyhub.demo.repository.GoogleOAuthTokenRepository;
 import com.familyhub.demo.repository.GoogleSyncedCalendarRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import com.familyhub.demo.event.GoogleAccountConnected;
+import com.familyhub.demo.google.GoogleScopes;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
@@ -33,8 +36,9 @@ public class GoogleOAuthService {
     private static final String AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
     private static final String TOKEN_URL = "https://oauth2.googleapis.com/token";
     private static final String REVOKE_URL = "https://oauth2.googleapis.com/revoke";
-    private static final String SCOPES = "https://www.googleapis.com/auth/calendar.events.readonly " +
-            "https://www.googleapis.com/auth/calendar.calendarlist.readonly";
+    // Phase 4: the events scope lets the hub write; accounts that signed in with the old
+    // read-only scope keep syncing and are asked to sign in again.
+    private static final String SCOPES = GoogleScopes.REQUESTED;
 
     private final GoogleOAuthConfig config;
     private final GoogleOAuthTokenRepository tokenRepository;
@@ -43,6 +47,8 @@ public class GoogleOAuthService {
     private final OAuthStateStore stateStore;
     private final GoogleSyncedCalendarRepository syncedCalendarRepository;
     private final CalendarEventRepository calendarEventRepository;
+    private final ApplicationEventPublisher events;
+    private final GoogleCalendarAdminService calendarAdmin;
     private final RestClient restClient;
 
     @Autowired
@@ -52,9 +58,11 @@ public class GoogleOAuthService {
                               TokenEncryptionService encryptionService,
                               OAuthStateStore stateStore,
                               GoogleSyncedCalendarRepository syncedCalendarRepository,
-                              CalendarEventRepository calendarEventRepository) {
+                              CalendarEventRepository calendarEventRepository,
+                              ApplicationEventPublisher events,
+                              GoogleCalendarAdminService calendarAdmin) {
         this(config, tokenRepository, memberRepository, encryptionService, stateStore,
-                syncedCalendarRepository, calendarEventRepository, RestClient.create());
+                syncedCalendarRepository, calendarEventRepository, events, calendarAdmin, RestClient.create());
     }
 
     public GoogleOAuthService(GoogleOAuthConfig config,
@@ -64,6 +72,8 @@ public class GoogleOAuthService {
                               OAuthStateStore stateStore,
                               GoogleSyncedCalendarRepository syncedCalendarRepository,
                               CalendarEventRepository calendarEventRepository,
+                              ApplicationEventPublisher events,
+                              GoogleCalendarAdminService calendarAdmin,
                               RestClient restClient) {
         this.config = config;
         this.tokenRepository = tokenRepository;
@@ -72,6 +82,8 @@ public class GoogleOAuthService {
         this.stateStore = stateStore;
         this.syncedCalendarRepository = syncedCalendarRepository;
         this.calendarEventRepository = calendarEventRepository;
+        this.events = events;
+        this.calendarAdmin = calendarAdmin;
         this.restClient = restClient;
     }
 
@@ -122,22 +134,26 @@ public class GoogleOAuthService {
             throw new BadRequestException("Google did not return a refresh token");
         }
 
-        // Delete existing token if reconnecting (flush to avoid unique constraint violation)
-        tokenRepository.findByMemberId(memberId)
-                .ifPresent(existing -> {
-                    tokenRepository.delete(existing);
-                    tokenRepository.flush();
-                });
-
-        GoogleOAuthToken token = new GoogleOAuthToken();
-        token.setMember(member);
+        // A reconnect updates the account's row in place: cached calendars and their access
+        // point at it, and a new row would leave them with no account to poll them.
+        GoogleOAuthToken token = tokenRepository.findByMemberId(memberId).orElse(null);
+        if (token == null) {
+            token = new GoogleOAuthToken();
+            token.setMember(member);
+        } else {
+            // The pre-Phase 4 sync's rows went with the old row; they still go. Removed in C10.
+            syncedCalendarRepository.deleteByMemberId(memberId);
+        }
         token.setAccessToken(encryptionService.encrypt(response.accessToken()));
         token.setRefreshToken(encryptionService.encrypt(response.refreshToken()));
         token.setTokenExpiry(Instant.now().plusSeconds(
                 response.expiresIn() != null ? response.expiresIn() : 3600));
         token.setScope(response.scope() != null ? response.scope() : SCOPES);
+        token.setNeedsReauth(false);
 
-        return tokenRepository.save(token);
+        GoogleOAuthToken saved = tokenRepository.save(token);
+        events.publishEvent(new GoogleAccountConnected(saved.getId()));
+        return saved;
     }
 
     @Transactional
@@ -155,6 +171,8 @@ public class GoogleOAuthService {
                 log.warn("Failed to revoke Google token for member {}: {}", memberId, e.getMessage());
             }
 
+            // Its calendars go to another account that sees them, or switch off.
+            calendarAdmin.accountRemoved(token.getId());
             // Delete synced calendar rows (CASCADE from token would handle this, but be explicit)
             syncedCalendarRepository.deleteByMemberId(memberId);
 

@@ -3,6 +3,7 @@ package com.familyhub.demo.repository;
 import com.familyhub.demo.model.GoogleCalendar;
 import com.familyhub.demo.model.GoogleEvent;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -79,4 +80,14 @@ public interface GoogleEventRepository extends JpaRepository<GoogleEvent, UUID> 
      */
     @Query("select e from GoogleEvent e where e.calendar.id = :calendarId")
     List<GoogleEvent> findAllByCalendarId(@Param("calendarId") UUID calendarId);
+
+    /**
+     * Drops a calendar's cached events, when it is switched off.
+     *
+     * @param calendarId the cached calendar's id
+     * @return how many rows went
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from GoogleEvent e where e.calendar.id = :calendarId")
+    int deleteAllByCalendarId(@Param("calendarId") UUID calendarId);
 }

@@ -15,6 +15,15 @@ public interface GoogleOAuthTokenRepository extends JpaRepository<GoogleOAuthTok
     Optional<GoogleOAuthToken> findByMemberId(UUID memberId);
 
     /**
+     * The family's signed-in accounts.
+     *
+     * @param familyId the family's id
+     * @return one per member who connected Google
+     */
+    @Query("select t from GoogleOAuthToken t where t.member.family.id = :familyId")
+    java.util.List<GoogleOAuthToken> findByFamilyId(@Param("familyId") UUID familyId);
+
+    /**
      * Stores a refreshed access token. A bulk update, so it works from a credentials
      * listener on any thread without a loaded entity; {@code updatedAt} is set here
      * because bulk updates skip {@code @PreUpdate}.

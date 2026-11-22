@@ -58,6 +58,10 @@ public class Family implements UserDetails {
     @Column(nullable = false, length = 100)
     private String timezone = "America/Los_Angeles";
 
+    /** The Google calendar new events go on (Phase 4); null until one is chosen. */
+    @Column(name = "default_google_calendar_id")
+    private UUID defaultGoogleCalendarId;
+
     /** Geocoded display name ("San Diego, California"); null until set in settings. */
     @Column(name = "weather_location", length = 120)
     private String weatherLocation;

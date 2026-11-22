@@ -39,7 +39,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(TestcontainersConfig.class)
+@Import({TestcontainersConfig.class, com.familyhub.demo.config.FakeGoogleTestConfig.class})
 @ActiveProfiles("test")
 class FamilyInboxReviewIntegrationTest {
     private static final String PASSWORD = "TestPassword123!";
@@ -58,6 +58,12 @@ class FamilyInboxReviewIntegrationTest {
 
     @Autowired
     private FamilyRepository familyRepository;
+
+    @Autowired
+    private com.familyhub.demo.config.FakeGoogleTestConfig.FakeGoogleFamilies googleFamilies;
+
+    @Autowired
+    private com.familyhub.demo.service.CalendarQueryService calendarQuery;
 
     @Autowired
     private InboxMessageRepository messageRepository;
@@ -91,6 +97,8 @@ class FamilyInboxReviewIntegrationTest {
                 .andExpect(jsonPath("$.data.status").value("ADDED"));
 
         assertThat(eventTitles(f, "2027-03-01", "2027-03-31")).contains("Picture day");
+        // Phase 4: approving put it in Google.
+        assertThat(googleTitles(f)).contains("Picture day");
         // For the person the flyer named.
         assertThat(eventMember(f, "2027-03-01", "2027-03-31", "Picture day")).isEqualTo(f.kidId());
     }
@@ -114,10 +122,11 @@ class FamilyInboxReviewIntegrationTest {
                                 """.formatted(f.parentId(), PIN)))
                 .andExpect(status().isOk());
 
-        List<String> dates = JsonPath.read(mockMvc.perform(get("/api/calendar/events")
-                        .param("startDate", "2027-03-01").param("endDate", "2027-03-31")
-                        .header("Authorization", "Bearer " + f.token()))
-                .andReturn().getResponse().getContentAsString(), "$.data[?(@.title == 'Bake sale')].date");
+        List<String> dates = events(f, "2027-03-01", "2027-03-31").stream()
+                .filter(event -> event.title().equals("Bake sale"))
+                .map(event -> java.time.Instant.parse(event.start()).atZone(java.time.ZoneId.of("America/Los_Angeles"))
+                        .toLocalDate().toString())
+                .toList();
         assertThat(dates).containsExactly("2027-03-13");
     }
 
@@ -140,6 +149,7 @@ class FamilyInboxReviewIntegrationTest {
                 .andExpect(jsonPath("$.data.status").value("UNDONE"));
 
         assertThat(eventTitles(f, "2027-03-01", "2027-03-31")).doesNotContain("Picture day", "Bake sale");
+        assertThat(googleTitles(f)).doesNotContain("Picture day", "Bake sale");
         mockMvc.perform(get("/api/inbox").header("Authorization", "Bearer " + f.token()))
                 .andExpect(jsonPath("$.data.waiting").value(0));
     }
@@ -222,17 +232,28 @@ class FamilyInboxReviewIntegrationTest {
         return id;
     }
 
-    private List<String> eventTitles(Registered f, String from, String to) throws Exception {
-        return JsonPath.read(mockMvc.perform(get("/api/calendar/events").param("startDate", from)
-                        .param("endDate", to).header("Authorization", "Bearer " + f.token()))
-                .andReturn().getResponse().getContentAsString(), "$.data[*].title");
+    // The calendar as the wall reads it: from the cache of Google.
+    private List<com.familyhub.demo.dto.calendar.CalendarEventResponse> events(Registered f, String from, String to) {
+        return calendarQuery.eventsFor(familyRepository.findByUsername(f.username()).orElseThrow(),
+                java.time.LocalDate.parse(from), java.time.LocalDate.parse(to), null);
     }
 
-    private String eventMember(Registered f, String from, String to, String title) throws Exception {
-        List<String> ids = JsonPath.read(mockMvc.perform(get("/api/calendar/events").param("startDate", from)
-                        .param("endDate", to).header("Authorization", "Bearer " + f.token()))
-                .andReturn().getResponse().getContentAsString(), "$.data[?(@.title == '" + title + "')].memberId");
-        return ids.getFirst();
+    @Autowired
+    private com.familyhub.demo.google.FakeGoogleCalendarGateway google;
+
+    private List<String> googleTitles(Registered f) {
+        return google.events("family-" + familyRepository.findByUsername(f.username()).orElseThrow().getId()
+                        + "@group.calendar.google.com").stream()
+                .map(com.google.api.services.calendar.model.Event::getSummary).toList();
+    }
+
+    private List<String> eventTitles(Registered f, String from, String to) {
+        return events(f, from, to).stream().map(com.familyhub.demo.dto.calendar.CalendarEventResponse::title).toList();
+    }
+
+    private String eventMember(Registered f, String from, String to, String title) {
+        return events(f, from, to).stream().filter(event -> event.title().equals(title)).findFirst().orElseThrow()
+                .memberIds().getFirst().toString();
     }
 
     private static String pin(String approverId, String pin) {
@@ -258,6 +279,8 @@ class FamilyInboxReviewIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
         List<String> ids = JsonPath.read(body, "$.data.family.members[*].id");
         Registered f = new Registered(JsonPath.read(body, "$.data.token"), username, ids.get(0), ids.get(1));
+        // Phase 4: approved events go to Google; the family is connected to the fake one.
+        googleFamilies.connect(UUID.fromString(JsonPath.read(body, "$.data.family.id")));
         mockMvc.perform(put("/api/family/members/{id}/role", f.kidId()).header("Authorization", "Bearer " + f.token())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"role\": \"KID\", \"password\": \"" + PASSWORD + "\"}"))

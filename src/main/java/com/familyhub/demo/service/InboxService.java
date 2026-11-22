@@ -1,8 +1,9 @@
 package com.familyhub.demo.service;
 
 import com.familyhub.demo.config.InboxProperties;
-import com.familyhub.demo.dto.CalendarEventRequest;
-import com.familyhub.demo.dto.CalendarEventResponse;
+import com.familyhub.demo.dto.calendar.CalendarEventResponse;
+import com.familyhub.demo.dto.calendar.CalendarWriteRequest;
+import com.familyhub.demo.exception.CalendarWriteException;
 import com.familyhub.demo.dto.CreateRecipeRequest;
 import com.familyhub.demo.dto.ImportRecipeRequest;
 import com.familyhub.demo.dto.PhotoResponse;
@@ -112,7 +113,7 @@ public class InboxService {
     private final SenderVerifier verifier;
     private final MailReader reader;
     private final ReplySender replies;
-    private final CalendarEventService calendarEvents;
+    private final CalendarWriteService calendarWrites;
     private final RecipeService recipes;
     private final InboxReviewService review;
     private final ObjectMapper json;
@@ -121,7 +122,7 @@ public class InboxService {
     public InboxService(InboxProperties properties, InboxMessageRepository messages, InboxSenderRepository senders,
                         InboxImportRepository imports, FamilyMemberRepository members, PhotoService photoService,
                         PictureShrinker shrinker, HeicDecoder heicDecoder, MailReader reader, ReplySender replies,
-                        CalendarEventService calendarEvents, RecipeService recipes, InboxReviewService review,
+                        CalendarWriteService calendarWrites, RecipeService recipes, InboxReviewService review,
                         ObjectMapper json, Clock clock) {
         this.properties = properties;
         this.messages = messages;
@@ -134,7 +135,7 @@ public class InboxService {
         this.verifier = new SenderVerifier(properties.getTrustedAuthservIds());
         this.reader = reader;
         this.replies = replies;
-        this.calendarEvents = calendarEvents;
+        this.calendarWrites = calendarWrites;
         this.recipes = recipes;
         this.review = review;
         this.json = json;
@@ -272,13 +273,15 @@ public class InboxService {
             proposal.setConfidence(event.confidence() == null ? null : event.confidence().name());
             // Kept for every event: a waiting one is decided from it, and an added one's question is asked from it.
             proposal.setDetails(toJson(event));
-            Optional<CalendarEventRequest> request = InboxEventMapper.toRequest(event, familyMembers, mail.from(),
-                    mail.subject());
+            Optional<CalendarWriteRequest> request = InboxEventMapper.toRequest(event, familyMembers, mail.from(),
+                    mail.subject(), zone(family));
             boolean wasAdded = false;
             if (event.confidence() == MailReading.Confidence.HIGH && request.isPresent()) {
                 try {
-                    CalendarEventResponse created = calendarEvents.addCalendarEvent(request.get(), family);
-                    proposal.setCalendarEventId(created.id());
+                    // Google first: a failure (Google down, no write access) leaves it waiting.
+                    CalendarEventResponse created = calendarWrites.create(family, request.get());
+                    proposal.setGoogleCalendarId(created.calendarId());
+                    proposal.setGoogleEventId(created.googleEventId());
                     added++;
                     wasAdded = true;
                 } catch (RuntimeException e) {
@@ -520,6 +523,10 @@ public class InboxService {
                         + " start time.");
             } catch (ResourceNotFoundException e) {
                 problems.add(describe(entry.event(), familyMembers) + " is no longer on the calendar.");
+            } catch (CalendarWriteException e) {
+                // Google refused or could not be reached: nothing changed, and the parent can reply again.
+                problems.add(describe(event, familyMembers) + (entry.onCalendar() ? " could not be changed"
+                        : " could not go on the calendar") + ": " + e.getMessage() + " Reply again to try once more.");
             }
         }
         List<Numbered> after = numbered(family, first);
@@ -624,8 +631,9 @@ public class InboxService {
         StringBuilder list = new StringBuilder();
         for (Numbered entry : waiting) {
             MailReading.ReadEvent event = entry.event();
+            // Only whether it can be read: the zone does not change that.
             boolean readable = InboxEventMapper.toRequest(event, familyMembers, entry.item().getMessage().getSender(),
-                    entry.item().getMessage().getSubject()).isPresent();
+                    entry.item().getMessage().getSubject(), java.time.ZoneOffset.UTC).isPresent();
             String why = event.uncertainty() == null || event.uncertainty().isBlank()
                     ? (readable ? "" : "the date or time could not be read") : event.uncertainty();
             list.append(line(entry.number(), event, familyMembers)).append(why.isBlank() ? "" : " (" + why + ")")

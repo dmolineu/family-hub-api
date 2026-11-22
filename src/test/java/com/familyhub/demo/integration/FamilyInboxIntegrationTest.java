@@ -77,7 +77,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import({TestcontainersConfig.class, FamilyInboxIntegrationTest.SwitchableHeicDecoder.class,
-        FamilyInboxIntegrationTest.ScriptedReader.class})
+        FamilyInboxIntegrationTest.ScriptedReader.class, com.familyhub.demo.config.FakeGoogleTestConfig.class})
 @ActiveProfiles("test")
 class FamilyInboxIntegrationTest {
 
@@ -195,6 +195,13 @@ class FamilyInboxIntegrationTest {
     @Autowired
     private InboxMessageRepository messageRepository;
 
+    // Phase 4: inbox events go to Google; the family is connected to the fake one.
+    @Autowired
+    private com.familyhub.demo.config.FakeGoogleTestConfig.FakeGoogleFamilies googleFamilies;
+
+    @Autowired
+    private com.familyhub.demo.service.CalendarQueryService calendarQuery;
+
     private GreenMailUser hub;
     private String token;
 
@@ -202,10 +209,12 @@ class FamilyInboxIntegrationTest {
     void setUp() throws Exception {
         hub = greenMail.setUser("hub@localhost", "hub", "secret");
         token = signIn();
+        googleFamilies.connect(familyRepository.findByUsername(FAMILY).orElseThrow().getId());
     }
 
     @AfterEach
     void reset() {
+        google.stopFailing();
         SwitchableHeicDecoder.AVAILABLE.set(false);
         ScriptedReader.AVAILABLE.set(true);
         ScriptedReader.NEXT.set(null);
@@ -310,6 +319,8 @@ class FamilyInboxIntegrationTest {
         poller.pollNow();
 
         assertThat(eventTitles("2027-03-01", "2027-03-31")).contains("Soccer practice").doesNotContain("Picture day");
+        // Phase 4: it went to Google, and the inbox record points at Google's copy.
+        assertThat(googleTitles()).contains("Soccer practice");
         assertThat(eventMember("2027-03-01", "2027-03-31", "Soccer practice")).isEqualTo(memberId("Mom"));
         assertThat(count("FamilyHub-Processed")).isEqualTo(1);
 
@@ -320,6 +331,25 @@ class FamilyInboxIntegrationTest {
         assertThat(body).contains("Soccer practice").contains("Picture day").contains("UNDO");
         // One numbering for everything the flyer held, so a reply can name an added event as well.
         assertThat(text(reply)).contains("  1. Soccer practice").contains("  2. Picture day");
+    }
+
+    @Test
+    void whenGoogleCannotBeReachedASureEventWaitsForAParentInsteadOfBeingLost() throws Exception {
+        ScriptedReader.NEXT.set(events(
+                timed("Robotics club", "2027-05-04", "3:00 PM", "4:00 PM", MailReading.Confidence.HIGH, "Kid")));
+        hub.deliver(mail(DAD, GMAIL_VERIFIED, "<robotics-1@example.com>", "Robotics club", "Tuesdays", pdfPart()));
+        google.failAllWith(com.familyhub.demo.google.GoogleCalendarException.Kind.UNAVAILABLE);
+        try {
+            poller.pollNow();
+        } finally {
+            google.stopFailing();
+        }
+
+        assertThat(googleTitles()).doesNotContain("Robotics club");
+        assertThat(text(latestReplyTo(DAD))).contains("Waiting for a parent to check").contains("Robotics club");
+        mockMvc.perform(get("/api/inbox").header("Authorization", "Bearer " + token))
+                .andExpect(jsonPath("$.data.imports[?(@.title == 'Robotics club')].status").value(
+                        org.hamcrest.Matchers.contains("PENDING")));
     }
 
     @Test
@@ -421,6 +451,7 @@ class FamilyInboxIntegrationTest {
         poller.pollNow();
 
         assertThat(eventTitles("2027-04-01", "2027-04-30")).doesNotContain("Swim meet");
+        assertThat(googleTitles()).doesNotContain("Swim meet");
         // The undo is understood without reading the message again.
         assertThat(ScriptedReader.CALLS.get()).isEqualTo(readerCalls);
         assertThat(GreenMailUtil.getBody(latestReplyTo(DAD))).contains("Taken off").contains("Swim meet");
@@ -696,31 +727,48 @@ class FamilyInboxIntegrationTest {
         return new MailReading.ReadEvent(title, date, "", true, "", "", "", List.of(), confidence, uncertainty);
     }
 
-    private List<String> eventTitles(String from, String to) throws Exception {
-        return JsonPath.read(mockMvc.perform(get("/api/calendar/events").param("startDate", from)
-                        .param("endDate", to).header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString(), "$.data[*].title");
+    // The calendar as the wall reads it: from the cache of Google, in the family's zone.
+    private List<com.familyhub.demo.dto.calendar.CalendarEventResponse> events(String from, String to) {
+        return calendarQuery.eventsFor(familyRepository.findByUsername(FAMILY).orElseThrow(),
+                java.time.LocalDate.parse(from), java.time.LocalDate.parse(to), null);
     }
 
-    private String eventMember(String from, String to, String title) throws Exception {
-        List<String> ids = JsonPath.read(mockMvc.perform(get("/api/calendar/events").param("startDate", from)
-                        .param("endDate", to).header("Authorization", "Bearer " + token))
-                .andReturn().getResponse().getContentAsString(), "$.data[?(@.title == '" + title + "')].memberId");
-        return ids.getFirst();
+    private java.util.stream.Stream<com.familyhub.demo.dto.calendar.CalendarEventResponse> titled(String from,
+                                                                                                String to, String title) {
+        return events(from, to).stream().filter(event -> event.title().equals(title));
     }
 
-    private List<String> eventDates(String from, String to, String title) throws Exception {
-        return JsonPath.read(mockMvc.perform(get("/api/calendar/events").param("startDate", from)
-                        .param("endDate", to).header("Authorization", "Bearer " + token))
-                .andReturn().getResponse().getContentAsString(), "$.data[?(@.title == '" + title + "')].date");
+    private static java.time.ZonedDateTime local(com.familyhub.demo.dto.calendar.CalendarEventResponse event) {
+        return java.time.Instant.parse(event.start()).atZone(java.time.ZoneId.of("America/Los_Angeles"));
     }
 
-    private String eventStart(String from, String to, String title) throws Exception {
-        List<String> starts = JsonPath.read(mockMvc.perform(get("/api/calendar/events").param("startDate", from)
-                        .param("endDate", to).header("Authorization", "Bearer " + token))
-                .andReturn().getResponse().getContentAsString(), "$.data[?(@.title == '" + title + "')].startTime");
-        return starts.getFirst();
+    @Autowired
+    private com.familyhub.demo.google.FakeGoogleCalendarGateway google;
+
+    /** What the family's calendar in (the fake) Google holds. */
+    private List<String> googleTitles() {
+        return google.events("family-" + familyRepository.findByUsername(FAMILY).orElseThrow().getId()
+                        + "@group.calendar.google.com").stream()
+                .map(com.google.api.services.calendar.model.Event::getSummary).toList();
+    }
+
+    private List<String> eventTitles(String from, String to) {
+        return events(from, to).stream().map(com.familyhub.demo.dto.calendar.CalendarEventResponse::title).toList();
+    }
+
+    private String eventMember(String from, String to, String title) {
+        return titled(from, to, title).findFirst().orElseThrow().memberIds().getFirst().toString();
+    }
+
+    private List<String> eventDates(String from, String to, String title) {
+        return titled(from, to, title)
+                .map(event -> event.allDay() ? event.start() : local(event).toLocalDate().toString())
+                .toList();
+    }
+
+    private String eventStart(String from, String to, String title) {
+        return local(titled(from, to, title).findFirst().orElseThrow())
+                .format(java.time.format.DateTimeFormatter.ofPattern("h:mm a", java.util.Locale.ENGLISH));
     }
 
     private String memberId(String name) throws Exception {

@@ -1,8 +1,14 @@
 package com.familyhub.demo.service;
 
 import com.familyhub.demo.config.InboxProperties;
-import com.familyhub.demo.dto.CalendarEventRequest;
-import com.familyhub.demo.dto.CalendarEventResponse;
+import com.familyhub.demo.dto.calendar.CalendarEventResponse;
+import com.familyhub.demo.dto.calendar.CalendarWriteRequest;
+import com.familyhub.demo.model.CalendarEvent;
+import com.familyhub.demo.model.GoogleEvent;
+import com.familyhub.demo.model.GoogleEventStatus;
+import com.familyhub.demo.repository.CalendarEventRepository;
+import com.familyhub.demo.repository.GoogleCalendarRepository;
+import com.familyhub.demo.repository.GoogleEventRepository;
 import com.familyhub.demo.dto.InboxApproveRequest;
 import com.familyhub.demo.dto.InboxImportResponse;
 import com.familyhub.demo.dto.InboxProposal;
@@ -34,6 +40,9 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Set;
+import java.time.ZoneId;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -59,7 +68,10 @@ public class InboxReviewService {
     private final InboxImportRepository imports;
     private final InboxSenderRepository senders;
     private final ParentPinService parentPinService;
-    private final CalendarEventService calendarEvents;
+    private final CalendarWriteService calendarWrites;
+    private final GoogleCalendarRepository calendars;
+    private final GoogleEventRepository cachedEvents;
+    private final CalendarEventRepository legacyEvents;
     private final PhotoService photoService;
     private final RecipeService recipes;
     private final MailReader reader;
@@ -69,7 +81,9 @@ public class InboxReviewService {
 
     public InboxReviewService(InboxProperties properties, FamilyRepository families, FamilyMemberRepository members,
                               InboxImportRepository imports, InboxSenderRepository senders,
-                              ParentPinService parentPinService, CalendarEventService calendarEvents,
+                              ParentPinService parentPinService, CalendarWriteService calendarWrites,
+                              GoogleCalendarRepository calendars, GoogleEventRepository cachedEvents,
+                              CalendarEventRepository legacyEvents,
                               PhotoService photoService, RecipeService recipes, MailReader reader,
                               @Lazy InboxPoller poller, ObjectMapper json, Clock clock) {
         this.properties = properties;
@@ -78,7 +92,10 @@ public class InboxReviewService {
         this.imports = imports;
         this.senders = senders;
         this.parentPinService = parentPinService;
-        this.calendarEvents = calendarEvents;
+        this.calendarWrites = calendarWrites;
+        this.calendars = calendars;
+        this.cachedEvents = cachedEvents;
+        this.legacyEvents = legacyEvents;
         this.photoService = photoService;
         this.recipes = recipes;
         this.reader = reader;
@@ -141,18 +158,19 @@ public class InboxReviewService {
     void add(Family family, InboxImport proposal, MailReading.ReadEvent corrected, UUID memberId,
              FamilyMember parent) {
         List<FamilyMember> familyMembers = members.findByFamily(family);
-        CalendarEventRequest event = InboxEventMapper.toRequest(corrected, familyMembers,
-                        proposal.getMessage().getSender(), proposal.getMessage().getSubject())
+        CalendarWriteRequest event = InboxEventMapper.toRequest(corrected, familyMembers,
+                        proposal.getMessage().getSender(), proposal.getMessage().getSubject(), zone(family))
                 .orElseThrow(() -> new BadRequestException("Fill in the date and, unless it lasts all day, the"
                         + " start time first."));
         if (memberId != null) {
-            event = new CalendarEventRequest(event.title(), event.startTime(), event.endTime(), event.date(),
-                    memberId, event.isAllDay(), event.location(), event.endDate(), event.recurrenceRule(),
-                    event.description());
+            event = new CalendarWriteRequest(null, List.of(memberId), event.title(), event.description(),
+                    event.location(), event.allDay(), event.start(), event.end(), event.startDate(), event.endDate(),
+                    event.timeZone(), null, false, null);
         }
-        CalendarEventResponse created = calendarEvents.addCalendarEvent(event, family);
+        CalendarEventResponse created = calendarWrites.create(family, event);
         proposal.setTitle(event.title());
-        proposal.setCalendarEventId(created.id());
+        proposal.setGoogleCalendarId(created.calendarId());
+        proposal.setGoogleEventId(created.googleEventId());
         decide(proposal, InboxImportStatus.ADDED, parent);
     }
 
@@ -169,19 +187,23 @@ public class InboxReviewService {
         List<FamilyMember> familyMembers = members.findByFamily(family);
         String sender = added.getMessage().getSender();
         String subject = added.getMessage().getSubject();
-        CalendarEventRequest wanted = InboxEventMapper.toRequest(corrected, familyMembers, sender, subject)
+        ZoneId zone = zone(family);
+        CalendarWriteRequest wanted = InboxEventMapper.toRequest(corrected, familyMembers, sender, subject, zone)
                 .orElseThrow(() -> new BadRequestException("A correction needs the date and, unless it lasts all"
                         + " day, the start time."));
-        CalendarEventResponse existing = calendarEvents.getEventById(added.getCalendarEventId(), family);
+        GoogleEvent existing = cached(added).orElseThrow(() -> legacyWaiting(added)
+                ? new BadRequestException("It can be changed once Google Calendar is connected again.")
+                : new ResourceNotFoundException("Calendar Event", added.getId()));
         // Compared as calendar requests, so "2:15 PM" read back from the calendar equals the reader's.
-        boolean same = InboxEventMapper.toRequest(asRead(existing, added, familyMembers), familyMembers, sender,
-                subject).filter(wanted::equals).isPresent();
+        boolean same = InboxEventMapper.toRequest(asRead(existing, added, familyMembers, zone), familyMembers, sender,
+                subject, zone).filter(wanted::equals).isPresent();
         if (same) {
             return false;
         }
-        calendarEvents.updateCalendarEvent(new CalendarEventRequest(wanted.title(), wanted.startTime(),
-                wanted.endTime(), wanted.date(), wanted.memberId(), wanted.isAllDay(), wanted.location(),
-                wanted.endDate(), existing.recurrenceRule(), existing.description()), existing.id(), family);
+        // Keeps what a correction does not speak to: the description and any repeat rule.
+        calendarWrites.update(family, existing.getId(), new CalendarWriteRequest(null, wanted.memberIds(),
+                wanted.title(), existing.getDescription(), wanted.location(), wanted.allDay(), wanted.start(),
+                wanted.end(), wanted.startDate(), wanted.endDate(), wanted.timeZone(), null, false, existing.getEtag()));
         added.setTitle(wanted.title());
         added.setDetails(toJson(corrected));
         decide(added, InboxImportStatus.ADDED, parent);
@@ -194,28 +216,80 @@ public class InboxReviewService {
      * longer there.
      */
     Optional<MailReading.ReadEvent> onCalendar(Family family, InboxImport added) {
-        if (added.getKind() != InboxImportKind.EVENT || added.getStatus() != InboxImportStatus.ADDED
-                || added.getCalendarEventId() == null) {
+        if (added.getKind() != InboxImportKind.EVENT || added.getStatus() != InboxImportStatus.ADDED) {
             return Optional.empty();
         }
-        try {
-            return Optional.of(asRead(calendarEvents.getEventById(added.getCalendarEventId(), family), added,
-                    members.findByFamily(family)));
-        } catch (ResourceNotFoundException e) {
-            return Optional.empty();
+        List<FamilyMember> familyMembers = members.findByFamily(family);
+        Optional<GoogleEvent> row = cached(added);
+        if (row.isPresent()) {
+            return Optional.of(asRead(row.get(), added, familyMembers, zone(family)));
         }
+        // Added before Phase 4 and not copied to Google yet: read from the hub's own table.
+        return legacy(added).map(event -> asRead(event, added, familyMembers));
     }
 
-    /** A calendar event in the reader's terms, for its member and with the import's confidence and question. */
-    private MailReading.ReadEvent asRead(CalendarEventResponse event, InboxImport added,
-                                         List<FamilyMember> familyMembers) {
-        List<String> people = familyMembers.stream().filter(member -> member.getId().equals(event.memberId()))
+    /** The cached Google event an import points at, by Google's ids. */
+    private Optional<GoogleEvent> cached(InboxImport added) {
+        if (added.getGoogleCalendarId() == null || added.getGoogleEventId() == null) {
+            return Optional.empty();
+        }
+        return calendars.findById(added.getGoogleCalendarId())
+                .flatMap(calendar -> cachedEvents.findByCalendarAndGoogleEventId(calendar, added.getGoogleEventId()))
+                .filter(row -> row.getStatus() != GoogleEventStatus.CANCELLED);
+    }
+
+    /** The hub's own pre-Phase 4 event an import points at, while it waits to be copied to Google. */
+    private Optional<CalendarEvent> legacy(InboxImport added) {
+        return added.getCalendarEventId() == null ? Optional.empty()
+                : legacyEvents.findById(added.getCalendarEventId()).filter(event -> event.getCopiedAt() == null);
+    }
+
+    private boolean legacyWaiting(InboxImport added) {
+        return added.getGoogleEventId() == null && legacy(added).isPresent();
+    }
+
+    private static ZoneId zone(Family family) {
+        return ZoneId.of(FamilyTimezoneResolver.resolveStoredTimezoneOrDefault(family.getTimezone()));
+    }
+
+    private static final java.time.format.DateTimeFormatter TWELVE_HOUR =
+            java.time.format.DateTimeFormatter.ofPattern("h:mm a", java.util.Locale.ENGLISH);
+
+    /** A cached Google event in the reader's terms, in the family's zone, for its members. */
+    private MailReading.ReadEvent asRead(GoogleEvent event, InboxImport added, List<FamilyMember> familyMembers,
+                                         ZoneId zone) {
+        Set<UUID> owners = event.getMemberIds() == null ? Set.of() : Set.of(event.getMemberIds());
+        List<String> people = familyMembers.stream().filter(member -> owners.contains(member.getId()))
                 .map(FamilyMember::getName).toList();
         String uncertainty = readEvent(added).uncertainty();
-        return new MailReading.ReadEvent(event.title(), event.date().toString(),
-                event.endDate() == null ? "" : event.endDate().toString(), event.isAllDay(),
-                event.isAllDay() ? "" : event.startTime(), event.isAllDay() ? "" : event.endTime(),
-                event.location() == null ? "" : event.location(), people, confidence(added),
+        String date;
+        String endDate = "";
+        String start = "";
+        String end = "";
+        if (event.isAllDay()) {
+            date = event.getStartDate().toString();
+            LocalDate last = event.getEndDate().minusDays(1);
+            endDate = last.isAfter(event.getStartDate()) ? last.toString() : "";
+        } else {
+            date = event.getStartAt().atZone(zone).toLocalDate().toString();
+            start = event.getStartAt().atZone(zone).format(TWELVE_HOUR);
+            end = event.getEndAt().atZone(zone).format(TWELVE_HOUR);
+        }
+        return new MailReading.ReadEvent(event.getTitle(), date, endDate, event.isAllDay(), start, end,
+                event.getLocation() == null ? "" : event.getLocation(), people, confidence(added),
+                uncertainty == null ? "" : uncertainty);
+    }
+
+    /** One of the hub's own pre-Phase 4 events in the reader's terms. */
+    private MailReading.ReadEvent asRead(CalendarEvent event, InboxImport added, List<FamilyMember> familyMembers) {
+        List<String> people = familyMembers.stream().filter(member -> member.getId().equals(event.getMember().getId()))
+                .map(FamilyMember::getName).toList();
+        String uncertainty = readEvent(added).uncertainty();
+        return new MailReading.ReadEvent(event.getTitle(), event.getDate().toString(),
+                event.getEndDate() == null ? "" : event.getEndDate().toString(), event.isAllDay(),
+                event.isAllDay() ? "" : event.getStartTime().format(TWELVE_HOUR),
+                event.isAllDay() ? "" : event.getEndTime().format(TWELVE_HOUR),
+                event.getLocation() == null ? "" : event.getLocation(), people, confidence(added),
                 uncertainty == null ? "" : uncertainty);
     }
 
@@ -271,8 +345,14 @@ public class InboxReviewService {
      */
     void takeOff(Family family, InboxImport added) {
         try {
-            if (added.getKind() == InboxImportKind.EVENT && added.getCalendarEventId() != null) {
-                calendarEvents.deleteCalendarEvent(added.getCalendarEventId(), family);
+            if (added.getKind() == InboxImportKind.EVENT) {
+                Optional<GoogleEvent> row = cached(added);
+                if (row.isPresent()) {
+                    calendarWrites.delete(family, row.get().getId(), null);
+                } else {
+                    // Not copied to Google yet: it only lives in the hub's own table.
+                    legacy(added).ifPresent(legacyEvents::delete);
+                }
             } else if (added.getKind() == InboxImportKind.PHOTO && added.getPhotoId() != null) {
                 photoService.delete(family, added.getPhotoId());
             } else if (added.getKind() == InboxImportKind.RECIPE && added.getRecipeId() != null) {

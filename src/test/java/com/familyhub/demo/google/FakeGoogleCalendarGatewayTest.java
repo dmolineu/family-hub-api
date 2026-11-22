@@ -250,6 +250,16 @@ class FakeGoogleCalendarGatewayTest {
     }
 
     @Test
+    void aGoogleThatIsDownFailsEveryCallUntilItIsBack() {
+        google.failAllWith(GoogleCalendarException.Kind.UNAVAILABLE);
+
+        assertThatThrownBy(() -> google.listCalendars(dad)).isInstanceOf(GoogleCalendarException.class);
+        assertThatThrownBy(() -> google.listCalendars(dad)).isInstanceOf(GoogleCalendarException.class);
+        google.stopFailing();
+        assertThat(google.listCalendars(dad)).hasSize(2);
+    }
+
+    @Test
     void anEventEditedInGooglesOwnAppShowsUpAsAChange() {
         Event event = google.insertEvent(dad, HUB, timed("Party", "2026-12-03T17:00:00Z", "2026-12-03T18:00:00Z"),
                 false);

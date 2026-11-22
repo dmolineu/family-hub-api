@@ -58,6 +58,7 @@ public class FakeGoogleCalendarGateway implements GoogleCalendarGateway {
     private int pageSize = 250;
     private int idCounter;
     private GoogleCalendarException.Kind failNext;
+    private GoogleCalendarException.Kind failAll;
 
     /**
      * Creates an empty calendar.
@@ -133,6 +134,21 @@ public class FakeGoogleCalendarGateway implements GoogleCalendarGateway {
      */
     public synchronized void failNextWith(GoogleCalendarException.Kind kind) {
         this.failNext = kind;
+    }
+
+    /**
+     * Makes every call fail until {@link #stopFailing()}, as when Google is down for a while.
+     *
+     * @param kind how they fail
+     */
+    public synchronized void failAllWith(GoogleCalendarException.Kind kind) {
+        this.failAll = kind;
+    }
+
+    /** Ends {@link #failAllWith} and drops a queued {@link #failNextWith}. */
+    public synchronized void stopFailing() {
+        this.failAll = null;
+        this.failNext = null;
     }
 
     /**
@@ -336,6 +352,9 @@ public class FakeGoogleCalendarGateway implements GoogleCalendarGateway {
     }
 
     private void checkFailure() {
+        if (failAll != null) {
+            throw failure(failAll, "Fake Google is down");
+        }
         if (failNext != null) {
             GoogleCalendarException.Kind kind = failNext;
             failNext = null;

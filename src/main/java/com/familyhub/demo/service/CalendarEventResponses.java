@@ -53,6 +53,25 @@ final class CalendarEventResponses {
                 allDay ? occurrence.endDate().toString() : occurrence.end().toString(), canEdit, familyZone);
     }
 
+    /**
+     * A changed occurrence, as a write of it returns it.
+     *
+     * @param instance      the instance row
+     * @param master        the series' master row
+     * @param originalStart the occurrence's original start, compact
+     * @param canEdit       whether a signed-in account may change it
+     * @param familyZone    the family's zone
+     * @return the response
+     */
+    static CalendarEventResponse forInstance(GoogleEvent instance, GoogleEvent master, String originalStart,
+                                             boolean canEdit, ZoneId familyZone) {
+        return build(instance, master.getId() + ":" + originalStart, master.getId(), originalStart,
+                master.getRecurrence(), instance.isAllDay(),
+                instance.isAllDay() ? instance.getStartDate().toString() : instance.getStartAt().toString(),
+                instance.isAllDay() ? instance.getEndDate().toString() : instance.getEndAt().toString(),
+                canEdit, familyZone);
+    }
+
     private static CalendarEventResponse build(GoogleEvent source, String occurrenceId, java.util.UUID seriesId,
                                                String originalStart, String[] recurrence, boolean allDay,
                                                String start, String end, boolean canEdit, ZoneId familyZone) {

@@ -59,6 +59,17 @@ public record CalendarWriteRequest(
     }
 
     /**
+     * The same request with other recurrence lines.
+     *
+     * @param newRecurrence the lines, or null to keep an event's own
+     * @return a copy carrying them
+     */
+    public CalendarWriteRequest withRecurrence(List<String> newRecurrence) {
+        return new CalendarWriteRequest(calendarId, memberIds, title, description, location, allDay, start, end,
+                startDate, endDate, timeZone, newRecurrence, notifyGuests, etag);
+    }
+
+    /**
      * The same request for another calendar.
      *
      * @param newCalendarId the calendar

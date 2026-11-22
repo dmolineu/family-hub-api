@@ -9,6 +9,11 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -51,15 +56,22 @@ public class GoogleEventWriter {
         event.setDescription(blankToNull(request.description()));
         event.setLocation(blankToNull(request.location()));
         if (request.allDay()) {
-            event.setStart(new EventDateTime().setDate(new DateTime(request.startDate().toString())));
-            event.setEnd(new EventDateTime().setDate(new DateTime(request.endDate().toString())));
+            long shift = daysToFirstMatch(request.startDate(), request.recurrence());
+            event.setStart(new EventDateTime().setDate(new DateTime(request.startDate().plusDays(shift).toString())));
+            event.setEnd(new EventDateTime().setDate(new DateTime(request.endDate().plusDays(shift).toString())));
         } else {
             String zone = request.timeZone() != null ? request.timeZone()
                     : event.getStart() != null && event.getStart().getTimeZone() != null
                     ? event.getStart().getTimeZone() : fallbackZone;
-            event.setStart(new EventDateTime().setDateTime(new DateTime(Date.from(request.start()), UTC))
+            ZoneId zoneId = zoneOf(zone);
+            // Moved by local days, so the series keeps its wall-clock time across DST.
+            LocalDateTime start = request.start().atZone(zoneId).toLocalDateTime();
+            long shift = daysToFirstMatch(start.toLocalDate(), request.recurrence());
+            Instant movedStart = start.plusDays(shift).atZone(zoneId).toInstant();
+            Instant movedEnd = request.end().atZone(zoneId).toLocalDateTime().plusDays(shift).atZone(zoneId).toInstant();
+            event.setStart(new EventDateTime().setDateTime(new DateTime(Date.from(movedStart), UTC))
                     .setTimeZone(zone));
-            event.setEnd(new EventDateTime().setDateTime(new DateTime(Date.from(request.end()), UTC))
+            event.setEnd(new EventDateTime().setDateTime(new DateTime(Date.from(movedEnd), UTC))
                     .setTimeZone(zone));
         }
         if (request.recurrence() != null) {
@@ -100,6 +112,13 @@ public class GoogleEventWriter {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    // Only a request that sets a series' lines moves its start; one date of a series, or a
+    // change that keeps the lines (null), is written where it was asked to be.
+    private static long daysToFirstMatch(LocalDate start, List<String> recurrence) {
+        return RecurrenceStart.firstMatchingDay(start, recurrence)
+                .map(day -> ChronoUnit.DAYS.between(start, day)).orElse(0L);
     }
 
     private static java.time.ZoneId zoneOf(String zone) {

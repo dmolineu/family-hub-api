@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
@@ -51,7 +52,12 @@ public class LegacyEventConverter {
                 .setSummary(row.getTitle())
                 .setDescription(row.getDescription())
                 .setLocation(row.getLocation());
-        times(event, row, zone);
+        // A series starts on its first matching day: the old calendar never showed it on a
+        // start day its rule skips, and Google would (see RecurrenceStart).
+        LocalDate day = row.getRecurrenceRule() == null ? row.getDate()
+                : com.familyhub.demo.google.RecurrenceStart.firstMatchingDay(row.getDate(),
+                List.of("RRULE:" + row.getRecurrenceRule())).orElse(row.getDate());
+        times(event, row, day, zone);
         if (row.getRecurrenceRule() != null) {
             List<String> lines = new ArrayList<>();
             lines.add("RRULE:" + (row.isAllDay() ? row.getRecurrenceRule()
@@ -106,7 +112,7 @@ public class LegacyEventConverter {
         instance.setSummary(exception.getTitle());
         instance.setDescription(exception.getDescription());
         instance.setLocation(exception.getLocation());
-        times(instance, exception, zone);
+        times(instance, exception, exception.getDate(), zone);
         Map<String, String> shared = new HashMap<>();
         if (instance.getExtendedProperties() != null && instance.getExtendedProperties().getShared() != null) {
             shared.putAll(instance.getExtendedProperties().getShared());
@@ -117,15 +123,17 @@ public class LegacyEventConverter {
         return instance;
     }
 
-    private static void times(Event event, CalendarEvent row, ZoneId zone) {
+    // The row's times on {@code day}: its own date, or a series' first matching day.
+    private static void times(Event event, CalendarEvent row, LocalDate day, ZoneId zone) {
         if (row.isAllDay()) {
             LocalDate last = row.getEndDate() != null ? row.getEndDate() : row.getDate();
-            event.setStart(new EventDateTime().setDate(new DateTime(row.getDate().toString())));
-            event.setEnd(new EventDateTime().setDate(new DateTime(last.plusDays(1).toString())));
+            LocalDate movedLast = last.plusDays(ChronoUnit.DAYS.between(row.getDate(), day));
+            event.setStart(new EventDateTime().setDate(new DateTime(day.toString())));
+            event.setEnd(new EventDateTime().setDate(new DateTime(movedLast.plusDays(1).toString())));
             return;
         }
-        LocalDateTime start = row.getDate().atTime(row.getStartTime());
-        LocalDateTime end = row.getDate().atTime(row.getEndTime());
+        LocalDateTime start = day.atTime(row.getStartTime());
+        LocalDateTime end = day.atTime(row.getEndTime());
         if (end.isBefore(start)) {
             // 23:00 to 01:00 ends the next day.
             end = end.plusDays(1);

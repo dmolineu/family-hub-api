@@ -70,4 +70,13 @@ public interface GoogleEventRepository extends JpaRepository<GoogleEvent, UUID> 
      * @return the event, if cached
      */
     Optional<GoogleEvent> findByCalendarAndGoogleEventId(GoogleCalendar calendar, String googleEventId);
+
+    /**
+     * Every cached row of one calendar, cancelled occurrences included.
+     *
+     * @param calendarId the cached calendar's id
+     * @return its rows
+     */
+    @Query("select e from GoogleEvent e where e.calendar.id = :calendarId")
+    List<GoogleEvent> findAllByCalendarId(@Param("calendarId") UUID calendarId);
 }

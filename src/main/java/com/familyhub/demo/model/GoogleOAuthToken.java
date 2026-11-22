@@ -32,6 +32,14 @@ public class GoogleOAuthToken {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String scope;
 
+    /** The Google account's address, once the calendar list has been read (Phase 4). */
+    @Column(name = "google_account_email", length = 320)
+    private String googleAccountEmail;
+
+    /** Google refused this sign-in (revoked or expired); its calendars wait until it is redone. */
+    @Column(name = "needs_reauth", nullable = false)
+    private boolean needsReauth;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

@@ -31,4 +31,16 @@ public interface GoogleOAuthTokenRepository extends JpaRepository<GoogleOAuthTok
             + "t.updatedAt = :now where t.id = :id")
     int updateAccessToken(@Param("id") UUID id, @Param("accessToken") String accessToken,
                           @Param("expiry") Instant expiry, @Param("now") Instant now);
+
+    /**
+     * Marks an account whose sign-in Google refused; its calendars wait until it signs in
+     * again (a reconnect replaces the row).
+     *
+     * @param id the token's id
+     * @return the number of rows changed
+     */
+    @Modifying
+    @Transactional
+    @Query("update GoogleOAuthToken t set t.needsReauth = true where t.id = :id")
+    int markNeedsReauth(@Param("id") UUID id);
 }

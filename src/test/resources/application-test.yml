@@ -25,6 +25,9 @@ jwt:
   issuer: ${JWT_ISSUER:family-hub-api-test}
 
 google:
+  calendar:
+    # Tests sync calendars themselves; the poller never fires on its own.
+    poll-initial-delay: PT1H
   oauth:
     client-id: test-client-id
     client-secret: test-client-secret

@@ -21,6 +21,8 @@ public class GoogleCalendarProperties {
     private Duration readTimeout = Duration.ofSeconds(15);
     /** The pause between the end of one poll of every calendar and the start of the next. */
     private Duration pollInterval = Duration.ofSeconds(60);
+    /** The wait after startup before the first poll. */
+    private Duration pollInitialDelay = Duration.ofSeconds(30);
     /** A full sync fetches events that end after now minus this; series always come. */
     private Duration fullSyncLookback = Duration.ofDays(365);
     /** Use the in-memory fake instead of Google. Never in production. */

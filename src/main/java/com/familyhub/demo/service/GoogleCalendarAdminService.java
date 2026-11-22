@@ -4,6 +4,7 @@ import com.familyhub.demo.dto.calendar.GoogleCalendarSettingResponse;
 import com.familyhub.demo.dto.calendar.GoogleCalendarSettingsResponse;
 import com.familyhub.demo.dto.calendar.GoogleHealthResponse;
 import com.familyhub.demo.dto.calendar.UpdateGoogleCalendarSettingsRequest;
+import com.familyhub.demo.event.CalendarSyncRequested;
 import com.familyhub.demo.exception.BadRequestException;
 import com.familyhub.demo.exception.ResourceNotFoundException;
 import com.familyhub.demo.google.GoogleCalendarGateway;
@@ -55,6 +56,7 @@ public class GoogleCalendarAdminService {
     private final GoogleOAuthTokenRepository tokens;
     private final FamilyMemberRepository members;
     private final FamilyRepository families;
+    private final org.springframework.context.ApplicationEventPublisher publisher;
     private final TransactionTemplate transactions;
 
     /**
@@ -67,12 +69,15 @@ public class GoogleCalendarAdminService {
      * @param tokens             signed-in accounts
      * @param members            family members, for lanes
      * @param families           families, for the default calendar
+     * @param publisher          asks for syncs
      * @param transactionManager runs each change in one transaction
      */
     public GoogleCalendarAdminService(GoogleCalendarGateway gateway, GoogleCalendarRepository calendars,
                                       GoogleCalendarAccessRepository access, GoogleEventRepository events,
                                       GoogleOAuthTokenRepository tokens, FamilyMemberRepository members,
-                                      FamilyRepository families, PlatformTransactionManager transactionManager) {
+                                      FamilyRepository families,
+                                      org.springframework.context.ApplicationEventPublisher publisher,
+                                      PlatformTransactionManager transactionManager) {
         this.gateway = gateway;
         this.calendars = calendars;
         this.access = access;
@@ -80,6 +85,7 @@ public class GoogleCalendarAdminService {
         this.tokens = tokens;
         this.members = members;
         this.families = families;
+        this.publisher = publisher;
         this.transactions = new TransactionTemplate(transactionManager);
     }
 
@@ -138,6 +144,41 @@ public class GoogleCalendarAdminService {
                 repick(row.getCalendar(), tokenId);
             }
         }
+    }
+
+    /**
+     * "Sync now" for a member: reads their account's calendar list again and asks for a
+     * sync of the family's switched-on calendars (done off the request thread).
+     *
+     * @param family   the signed-in family
+     * @param memberId the member whose account to read
+     * @throws ResourceNotFoundException if the member has no Google account connected
+     */
+    public void refreshMember(Family family, UUID memberId) {
+        GoogleOAuthToken account = tokens.findByMemberId(memberId)
+                .filter(token -> token.getMember().getFamily().getId().equals(family.getId()))
+                .orElseThrow(() -> new ResourceNotFoundException("Google account of member", memberId));
+        discover(account.getId());
+        calendars.findEnabledByFamily(family.getId())
+                .forEach(calendar -> publisher.publishEvent(new CalendarSyncRequested(calendar.getId())));
+    }
+
+    /**
+     * Whether a member's Google account is connected, and the calendars it sees.
+     *
+     * @param memberId the member
+     * @return the status; not connected with no calendars when the member has no account
+     */
+    public com.familyhub.demo.dto.GoogleConnectionStatus connectionStatus(UUID memberId) {
+        return transactions.execute(status -> tokens.findByMemberId(memberId)
+                .map(token -> new com.familyhub.demo.dto.GoogleConnectionStatus(true,
+                        access.findByTokenId(token.getId()).stream()
+                                .map(GoogleCalendarAccess::getCalendar)
+                                .map(calendar -> new com.familyhub.demo.dto.GoogleConnectionStatus.SyncedCalendarInfo(
+                                        calendar.getGoogleCalendarId(), calendar.getSummary(), calendar.isEnabled(),
+                                        calendar.getLastSyncedAt()))
+                                .toList()))
+                .orElse(new com.familyhub.demo.dto.GoogleConnectionStatus(false, List.of())));
     }
 
     /**

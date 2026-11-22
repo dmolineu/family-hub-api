@@ -36,7 +36,6 @@ import com.familyhub.demo.model.RecipeInstruction;
 import com.familyhub.demo.model.RecipeTag;
 import com.familyhub.demo.model.SharedList;
 import com.familyhub.demo.model.SharedListItem;
-import com.familyhub.demo.repository.CalendarEventRepository;
 import com.familyhub.demo.repository.ChoreActivityRepository;
 import com.familyhub.demo.repository.ChorePeriodCompletionRepository;
 import com.familyhub.demo.repository.ChoreTemplateRepository;
@@ -84,7 +83,6 @@ public class BackupRestoreService {
     private final SharedListItemRepository sharedListItemRepository;
     private final RecipeRepository recipeRepository;
     private final MealSlotRepository mealSlotRepository;
-    private final CalendarEventRepository calendarEventRepository;
     private final ThemePackService themePackService;
     private final AvatarPackService avatarPackService;
     private final RewardService rewardService;

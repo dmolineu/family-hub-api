@@ -82,6 +82,21 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return buildErrorResponse(HttpStatus.SERVICE_UNAVAILABLE, request, ex.getMessage());
     }
 
+    /**
+     * A calendar write Google refused or could not take (Phase 4): its code and message,
+     * and Retry-After when Google asked to wait. Never a 401, which would sign the app out.
+     */
+    @ExceptionHandler(CalendarWriteException.class)
+    public ResponseEntity<ErrorResponse> handleCalendarWrite(CalendarWriteException ex, HttpServletRequest request) {
+        log.warn("Calendar write refused: {} {}, code={}, message={}", request.getMethod(), request.getRequestURI(),
+                ex.getCode(), ex.getMessage());
+        ErrorResponse error = new ErrorResponse(ex.getStatus().value(), request.getRequestURI(), ex.getMessage(),
+                java.time.Instant.now(), null, ex.getCode().name());
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(ex.getStatus());
+        ex.getRetryAfter().ifPresent(wait -> response.header("Retry-After", String.valueOf(wait.toSeconds())));
+        return response.body(error);
+    }
+
     @ExceptionHandler(BadRequestException.class)
     public ResponseEntity<ErrorResponse> handleBadRequest(BadRequestException ex, HttpServletRequest request) {
         log.warn("Bad request: {} {}, message={}", request.getMethod(), request.getRequestURI(), ex.getMessage());

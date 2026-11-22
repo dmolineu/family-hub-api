@@ -109,51 +109,6 @@ public final class TestDataFactory {
         );
     }
 
-    public static CalendarEventRequest createCalendarEventRequest(UUID memberId) {
-        return new CalendarEventRequest(
-                "Test Event",
-                "9:00 AM",
-                "10:00 AM",
-                LocalDate.of(2025, 6, 15),
-                memberId,
-                false,
-                "Test Location",
-                null,
-                null,
-                null
-        );
-    }
-
-    public static CalendarEventRequest createMultiDayCalendarEventRequest(UUID memberId) {
-        return new CalendarEventRequest(
-                "Vacation",
-                "12:00 AM",
-                "12:00 AM",
-                LocalDate.of(2025, 3, 7),
-                memberId,
-                true,
-                null,
-                LocalDate.of(2025, 3, 9),
-                null,
-                null
-        );
-    }
-
-    public static CalendarEventRequest createRecurringCalendarEventRequest(UUID memberId) {
-        return new CalendarEventRequest(
-                "Preschool",
-                "9:00 AM",
-                "12:00 PM",
-                LocalDate.of(2025, 6, 3),
-                memberId,
-                false,
-                "School",
-                null,
-                "FREQ=WEEKLY;BYDAY=TU,TH,FR",
-                null
-        );
-    }
-
     public static CalendarEvent createRecurringCalendarEvent(Family family, FamilyMember member) {
         CalendarEvent event = new CalendarEvent();
         event.setId(UUID.randomUUID());
@@ -218,26 +173,6 @@ public final class TestDataFactory {
                 "member@test.com",
                 null
         );
-    }
-
-    public static CalendarEventResponse createCalendarEventResponse() {
-        return CalendarEventResponse.builder()
-                .id(EVENT_ID)
-                .title("Test Event")
-                .startTime("9:00 AM")
-                .endTime("10:00 AM")
-                .date(LocalDate.of(2025, 6, 15))
-                .memberId(MEMBER_ID)
-                .isAllDay(false)
-                .location("Test Location")
-                .endDate(null)
-                .recurrenceRule(null)
-                .recurringEventId(null)
-                .isRecurring(false)
-                .source("NATIVE")
-                .description(null)
-                .htmlLink(null)
-                .build();
     }
 
     public static ChoreTemplate createChoreTemplate(

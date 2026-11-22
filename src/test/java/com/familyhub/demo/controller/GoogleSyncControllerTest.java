@@ -6,7 +6,7 @@ import com.familyhub.demo.security.JwtAuthenticationFilter;
 import com.familyhub.demo.security.WithMockFamily;
 import com.familyhub.demo.service.FamilyMemberService;
 import com.familyhub.demo.service.FamilyService;
-import com.familyhub.demo.service.GoogleCalendarSyncService;
+import com.familyhub.demo.service.GoogleCalendarAdminService;
 import com.familyhub.demo.service.JwtService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,7 +44,7 @@ class GoogleSyncControllerTest {
     private FamilyMemberService familyMemberService;
 
     @MockitoBean
-    private GoogleCalendarSyncService syncService;
+    private GoogleCalendarAdminService calendarAdmin;
 
     @Test
     @WithMockFamily
@@ -54,7 +54,7 @@ class GoogleSyncControllerTest {
                 .andExpect(jsonPath("$.message").value("Sync started"));
 
         verify(familyMemberService).findById(any(), eq(MEMBER_ID));
-        verify(syncService).syncMember(MEMBER_ID);
+        verify(calendarAdmin).refreshMember(any(), eq(MEMBER_ID));
     }
 
     @Test

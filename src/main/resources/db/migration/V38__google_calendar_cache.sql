@@ -130,3 +130,10 @@ from (select family_id, min(id::text)::uuid as id
       group by family_id
       having count(*) = 1) only_one
 where f.id = only_one.family_id;
+
+-- The pre-Phase 4 sync goes (C10). Its GOOGLE rows are dropped: the new sync fills the
+-- cache from Google. Then its link to its calendars, and its calendar table, which the
+-- carry-over above has read. The family's own (NATIVE) rows stay until V39.
+delete from calendar_event where source = 'GOOGLE';
+alter table calendar_event drop column synced_calendar_id;
+drop table google_synced_calendar;

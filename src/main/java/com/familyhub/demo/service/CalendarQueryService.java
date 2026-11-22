@@ -214,6 +214,60 @@ public class CalendarQueryService {
         return row;
     }
 
+    /**
+     * One event: a single event, a series as a whole, or a changed date of one; also one
+     * of the family's own events still waiting to be copied to Google.
+     *
+     * @param family the signed-in family
+     * @param id     the event's id
+     * @return the event as the calendar shows it
+     * @throws ResourceNotFoundException if it is not on one of the family's switched-on calendars
+     */
+    public CalendarEventResponse eventById(Family family, UUID id) {
+        ZoneId familyZone = ZoneId.of(FamilyTimezoneResolver.resolveStoredTimezoneOrDefault(family.getTimezone()));
+        java.util.Optional<GoogleEvent> cached = events.findById(id)
+                .filter(row -> row.getCalendar().getFamily().getId().equals(family.getId()))
+                .filter(row -> row.getCalendar().isEnabled());
+        if (cached.isPresent()) {
+            GoogleEvent row = cached.get();
+            boolean canEdit = editableCalendars(List.of(row.getCalendar())).contains(row.getCalendar().getId());
+            if (row.getRecurringEventId() != null) {
+                GoogleEvent master = events.findByCalendarAndGoogleEventId(row.getCalendar(), row.getRecurringEventId())
+                        .orElse(null);
+                if (master != null) {
+                    return CalendarEventResponses.forInstance(row, master, compactOriginal(row), canEdit, familyZone);
+                }
+            }
+            return CalendarEventResponses.forRow(row, canEdit, familyZone);
+        }
+        return waitingToBeCopied(family, calendars.findEnabledByFamily(family.getId()),
+                Window.of(LocalDate.of(1970, 1, 1), LocalDate.of(1970, 1, 1), familyZone), familyZone, id)
+                .orElseThrow(() -> new ResourceNotFoundException("Calendar Event", id));
+    }
+
+    private static String compactOriginal(GoogleEvent instance) {
+        if (instance.getOriginalStartDate() != null) {
+            return instance.getOriginalStartDate().format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+        }
+        return java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
+                .withZone(java.time.ZoneOffset.UTC).format(instance.getOriginalStartAt());
+    }
+
+    // One waiting event by id, as the calendar shows it (whatever the window).
+    private java.util.Optional<CalendarEventResponse> waitingToBeCopied(Family family, List<GoogleCalendar> shown,
+                                                                        Window ignored, ZoneId familyZone, UUID id) {
+        return legacy.findById(id)
+                .filter(row -> row.getFamily().getId().equals(family.getId()))
+                .filter(row -> row.getCopiedAt() == null && row.getRecurringEvent() == null)
+                .map(row -> {
+                    GoogleCalendar onto = shown.stream()
+                            .filter(calendar -> calendar.getId().equals(family.getDefaultGoogleCalendarId()))
+                            .findFirst().orElseGet(GoogleCalendar::new);
+                    GoogleEvent display = display(converter.toGoogle(row, List.of(), familyZone), onto, row);
+                    return CalendarEventResponses.forRow(display, false, familyZone);
+                });
+    }
+
     private Set<UUID> editableCalendars(List<GoogleCalendar> shown) {
         Set<UUID> editable = new HashSet<>();
         for (GoogleCalendarAccess row : access.findByCalendars(shown)) {

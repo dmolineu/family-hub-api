@@ -36,16 +36,25 @@ public record CalendarWriteRequest(
         @NotBlank @Size(max = 1024) String title,
         @Size(max = 8192) String description,
         @Size(max = 1024) String location,
-        boolean allDay,
+        Boolean allDay,
         Instant start,
         Instant end,
         LocalDate startDate,
         LocalDate endDate,
         @Size(max = 100) String timeZone,
         List<String> recurrence,
-        boolean notifyGuests,
+        Boolean notifyGuests,
         String etag
 ) {
+
+    /**
+     * Missing flags are false. They are boxed because Jackson 3 refuses a missing value
+     * for a primitive, and the app leaves {@code notifyGuests} out.
+     */
+    public CalendarWriteRequest {
+        allDay = allDay != null && allDay;
+        notifyGuests = notifyGuests != null && notifyGuests;
+    }
 
     /**
      * The same request with an etag.

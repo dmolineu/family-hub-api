@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * one share it), whose lane an unmarked event goes in (today's member), and a default
  * calendar for new events when the family syncs exactly one enabled calendar. The
  * family's own events and the inbox's links to them stay as they are until the
- * backfill copies them to Google.
+ * backfill copies them to Google; the old sync's cached rows and its calendar table go.
  */
 class GoogleCalendarCacheMigrationTest {
 
@@ -121,7 +121,7 @@ class GoogleCalendarCacheMigrationTest {
             String maya = member(conn, home, "Maya");
             dadToken = token(conn, dad);
             String momToken = token(conn, mom);
-            synced(conn, dadToken, dad, "hub@group.calendar.google.com", "Hub", true);
+            String dadsHub = synced(conn, dadToken, dad, "hub@group.calendar.google.com", "Hub", true);
             synced(conn, dadToken, dad, "personal@group.calendar.google.com", "Personal", false);
             // Mom syncs the same family calendar: it must be cached once, with both lanes.
             synced(conn, momToken, mom, "hub@group.calendar.google.com", "Hub", true);
@@ -142,6 +142,11 @@ class GoogleCalendarCacheMigrationTest {
                     + "(id, title, start_time, end_time, date, end_date, is_all_day, member_id, family_id) "
                     + "VALUES ('$id', 'Trip', '00:00', '00:00', '2026-12-01', '2026-12-03', true, '" + maya
                     + "', '" + home + "')");
+            // A row the old sync cached: it goes, and the new sync fetches it again.
+            insert(conn, "INSERT INTO calendar_event "
+                    + "(id, title, start_time, end_time, date, member_id, family_id, source, google_event_id, "
+                    + "synced_calendar_id) VALUES ('$id', 'From Google', '09:00', '10:00', '2026-11-06', '" + dad
+                    + "', '" + home + "', 'GOOGLE', 'g1', '" + dadsHub + "')");
             String message = insert(conn, "INSERT INTO inbox_message "
                     + "(id, family_id, message_id, outcome, processed_at) VALUES ('$id', '" + home
                     + "', '<flyer@example.com>', 'EVENTS', now())");
@@ -192,6 +197,12 @@ class GoogleCalendarCacheMigrationTest {
                     + "|| coalesce(google_account_email, 'unknown') FROM google_oauth_token"))
                     .containsExactly("false:unknown");
             assertThat(strings(conn, "SELECT count(*) FROM google_event")).containsExactly("0");
+            // The old sync's calendar table and its link from the events are gone.
+            assertThat(strings(conn, "SELECT count(*) FROM information_schema.tables WHERE table_schema = ? "
+                    + "AND table_name = 'google_synced_calendar'", schema)).containsExactly("0");
+            assertThat(strings(conn, "SELECT count(*) FROM information_schema.columns WHERE table_schema = ? "
+                    + "AND table_name = 'calendar_event' AND column_name = 'synced_calendar_id'", schema))
+                    .containsExactly("0");
         }
     }
 }

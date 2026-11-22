@@ -3,13 +3,10 @@ package com.familyhub.demo.service;
 import com.familyhub.demo.config.GoogleOAuthConfig;
 import com.familyhub.demo.dto.GoogleTokenResponse;
 import com.familyhub.demo.exception.BadRequestException;
-import com.familyhub.demo.model.EventSource;
 import com.familyhub.demo.model.FamilyMember;
 import com.familyhub.demo.model.GoogleOAuthToken;
-import com.familyhub.demo.repository.CalendarEventRepository;
 import com.familyhub.demo.repository.FamilyMemberRepository;
 import com.familyhub.demo.repository.GoogleOAuthTokenRepository;
-import com.familyhub.demo.repository.GoogleSyncedCalendarRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.web.client.RestClient;
 import org.junit.jupiter.api.Test;
@@ -44,11 +41,6 @@ class GoogleOAuthServiceTest {
     @Mock
     private OAuthStateStore stateStore;
 
-    @Mock
-    private GoogleSyncedCalendarRepository syncedCalendarRepository;
-
-    @Mock
-    private CalendarEventRepository calendarEventRepository;
 
     @Mock
     private org.springframework.context.ApplicationEventPublisher events;
@@ -67,7 +59,7 @@ class GoogleOAuthServiceTest {
         config.setRedirectUri("http://localhost:8080/api/google/callback");
 
         oauthService = new GoogleOAuthService(config, tokenRepository, memberRepository, encryptionService, stateStore,
-                syncedCalendarRepository, calendarEventRepository, events, calendarAdmin, restClient);
+                events, calendarAdmin, restClient);
     }
 
     @Test
@@ -144,8 +136,8 @@ class GoogleOAuthServiceTest {
         oauthService.disconnect(memberId);
 
         verify(encryptionService).decrypt("encrypted-refresh");
-        verify(syncedCalendarRepository).deleteByMemberId(memberId);
-        verify(calendarEventRepository).deleteByMemberAndSource(member, EventSource.GOOGLE);
+        // Phase 4: its calendars go to another account or switch off (their cached events with them).
+        verify(calendarAdmin).accountRemoved(token.getId());
         verify(tokenRepository).delete(token);
     }
 

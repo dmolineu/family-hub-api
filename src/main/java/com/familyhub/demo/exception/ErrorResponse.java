@@ -9,15 +9,22 @@ public record ErrorResponse(
         String path,
         String message,
         Instant timeStamp,
-        List<ValidationError> errors
+        List<ValidationError> errors,
+        /** A machine-readable reason, for errors the app explains (Phase 4's calendar codes); else null. */
+        String code
 ) {
 
     public ErrorResponse(int httpStatus, String path, String message) {
-        this(httpStatus, path, message, Instant.now(), null);
+        this(httpStatus, path, message, Instant.now(), null, null);
     }
 
     public ErrorResponse(int httpStatus, String path, String message, List<ValidationError> errors) {
-        this(httpStatus, path, message, Instant.now(), errors);
+        this(httpStatus, path, message, Instant.now(), errors, null);
+    }
+
+    public ErrorResponse(int httpStatus, String path, String message, Instant timeStamp,
+                         List<ValidationError> errors) {
+        this(httpStatus, path, message, timeStamp, errors, null);
     }
 
     public record ValidationError(String field, String message) {}

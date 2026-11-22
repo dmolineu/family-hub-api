@@ -6,11 +6,16 @@ import lombok.Setter;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.UUID;
 
+/**
+ * One of the hub's own events from before Phase 4 (inbox events among them). Since Phase 4
+ * Google holds the family's events; these rows wait here until they are copied to the
+ * family's default Google calendar ({@code copied_*}), and the table goes in a later
+ * release (V39). Nothing new is written here.
+ */
 @Entity
 @Getter
 @Setter
@@ -66,22 +71,6 @@ public class CalendarEvent {
 
     @Column(columnDefinition = "TEXT")
     private String description;
-
-    @Column(name = "google_event_id", length = 1024)
-    private String googleEventId;
-
-    @Column(name = "html_link", length = 2048)
-    private String htmlLink;
-
-    @Column(length = 255)
-    private String etag;
-
-    @Column(name = "google_updated_at")
-    private Instant googleUpdatedAt;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "synced_calendar_id")
-    private GoogleSyncedCalendar syncedCalendar;
 
     @Column(columnDefinition = "TEXT")
     private String exdates;

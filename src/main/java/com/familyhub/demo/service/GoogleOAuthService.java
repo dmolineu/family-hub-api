@@ -6,13 +6,10 @@ import com.familyhub.demo.dto.GoogleConnectionStatus;
 import com.familyhub.demo.dto.GoogleTokenResponse;
 import com.familyhub.demo.exception.BadRequestException;
 import com.familyhub.demo.exception.ResourceNotFoundException;
-import com.familyhub.demo.model.EventSource;
 import com.familyhub.demo.model.FamilyMember;
 import com.familyhub.demo.model.GoogleOAuthToken;
-import com.familyhub.demo.repository.CalendarEventRepository;
 import com.familyhub.demo.repository.FamilyMemberRepository;
 import com.familyhub.demo.repository.GoogleOAuthTokenRepository;
-import com.familyhub.demo.repository.GoogleSyncedCalendarRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.familyhub.demo.event.GoogleAccountConnected;
@@ -45,8 +42,6 @@ public class GoogleOAuthService {
     private final FamilyMemberRepository memberRepository;
     private final TokenEncryptionService encryptionService;
     private final OAuthStateStore stateStore;
-    private final GoogleSyncedCalendarRepository syncedCalendarRepository;
-    private final CalendarEventRepository calendarEventRepository;
     private final ApplicationEventPublisher events;
     private final GoogleCalendarAdminService calendarAdmin;
     private final RestClient restClient;
@@ -57,12 +52,10 @@ public class GoogleOAuthService {
                               FamilyMemberRepository memberRepository,
                               TokenEncryptionService encryptionService,
                               OAuthStateStore stateStore,
-                              GoogleSyncedCalendarRepository syncedCalendarRepository,
-                              CalendarEventRepository calendarEventRepository,
                               ApplicationEventPublisher events,
                               GoogleCalendarAdminService calendarAdmin) {
         this(config, tokenRepository, memberRepository, encryptionService, stateStore,
-                syncedCalendarRepository, calendarEventRepository, events, calendarAdmin, RestClient.create());
+                events, calendarAdmin, RestClient.create());
     }
 
     public GoogleOAuthService(GoogleOAuthConfig config,
@@ -70,8 +63,6 @@ public class GoogleOAuthService {
                               FamilyMemberRepository memberRepository,
                               TokenEncryptionService encryptionService,
                               OAuthStateStore stateStore,
-                              GoogleSyncedCalendarRepository syncedCalendarRepository,
-                              CalendarEventRepository calendarEventRepository,
                               ApplicationEventPublisher events,
                               GoogleCalendarAdminService calendarAdmin,
                               RestClient restClient) {
@@ -80,8 +71,6 @@ public class GoogleOAuthService {
         this.memberRepository = memberRepository;
         this.encryptionService = encryptionService;
         this.stateStore = stateStore;
-        this.syncedCalendarRepository = syncedCalendarRepository;
-        this.calendarEventRepository = calendarEventRepository;
         this.events = events;
         this.calendarAdmin = calendarAdmin;
         this.restClient = restClient;
@@ -140,9 +129,6 @@ public class GoogleOAuthService {
         if (token == null) {
             token = new GoogleOAuthToken();
             token.setMember(member);
-        } else {
-            // The pre-Phase 4 sync's rows went with the old row; they still go. Removed in C10.
-            syncedCalendarRepository.deleteByMemberId(memberId);
         }
         token.setAccessToken(encryptionService.encrypt(response.accessToken()));
         token.setRefreshToken(encryptionService.encrypt(response.refreshToken()));
@@ -173,12 +159,6 @@ public class GoogleOAuthService {
 
             // Its calendars go to another account that sees them, or switch off.
             calendarAdmin.accountRemoved(token.getId());
-            // Delete synced calendar rows (CASCADE from token would handle this, but be explicit)
-            syncedCalendarRepository.deleteByMemberId(memberId);
-
-            // Delete all Google-sourced calendar events for this member
-            calendarEventRepository.deleteByMemberAndSource(token.getMember(), EventSource.GOOGLE);
-
             tokenRepository.delete(token);
         });
     }
@@ -187,20 +167,14 @@ public class GoogleOAuthService {
         return tokenRepository.findByMemberId(memberId).isPresent();
     }
 
+    /**
+     * Whether a member's Google account is connected, and the calendars it sees.
+     *
+     * @param memberId the member
+     * @return the status
+     */
     public GoogleConnectionStatus getConnectionStatus(UUID memberId) {
-        boolean connected = isConnected(memberId);
-
-        List<GoogleConnectionStatus.SyncedCalendarInfo> calendars = connected
-                ? syncedCalendarRepository.findByMemberId(memberId).stream()
-                    .map(sc -> new GoogleConnectionStatus.SyncedCalendarInfo(
-                            sc.getGoogleCalendarId(),
-                            sc.getCalendarName(),
-                            sc.isEnabled(),
-                            sc.getLastSyncedAt()))
-                    .toList()
-                : List.of();
-
-        return new GoogleConnectionStatus(connected, calendars);
+        return calendarAdmin.connectionStatus(memberId);
     }
 
     private static String encode(String value) {

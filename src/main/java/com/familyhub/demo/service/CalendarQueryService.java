@@ -48,8 +48,6 @@ public class CalendarQueryService {
     /** The longest window one request may ask for. */
     static final long MAX_DAYS = 366;
 
-    private static final String NO_TITLE = "(No title)";
-
     private final GoogleCalendarRepository calendars;
     private final GoogleCalendarAccessRepository access;
     private final GoogleEventRepository events;
@@ -112,15 +110,17 @@ public class CalendarQueryService {
         List<Found> found = new ArrayList<>();
         for (GoogleEvent single : events.findSinglesInWindow(shown, window.from(), window.to(), window.fromDate(),
                 window.toDate())) {
-            found.add(new Found(single(single, editable, familyZone), single));
+            found.add(new Found(CalendarEventResponses.forRow(single,
+                    editable.contains(single.getCalendar().getId()), familyZone), single));
         }
         List<GoogleEvent> masters = events.findMasters(shown);
         Map<String, List<GoogleEvent>> instancesBySeries = instancesBySeries(shown, masters);
         for (GoogleEvent master : masters) {
-            ZoneId zone = zoneOf(master.getCalendar(), familyZone);
+            ZoneId zone = CalendarEventResponses.zoneOf(master.getCalendar(), familyZone);
             List<GoogleEvent> instances = instancesBySeries.getOrDefault(seriesKey(master), List.of());
             for (Occurrence occurrence : expander.expand(master, instances, zone, window)) {
-                found.add(new Found(occurrence(master, occurrence, editable, familyZone), master));
+                found.add(new Found(CalendarEventResponses.forOccurrence(master, occurrence,
+                        editable.contains(master.getCalendar().getId()), familyZone), master));
             }
         }
 
@@ -159,53 +159,6 @@ public class CalendarQueryService {
         return master.getCalendar().getId() + "/" + master.getGoogleEventId();
     }
 
-    private static CalendarEventResponse single(GoogleEvent event, Set<UUID> editable, ZoneId familyZone) {
-        return response(event, event.getId().toString(), null, null, null, event.isAllDay(),
-                event.isAllDay() ? event.getStartDate().toString() : event.getStartAt().toString(),
-                event.isAllDay() ? event.getEndDate().toString() : event.getEndAt().toString(),
-                editable, familyZone);
-    }
-
-    private static CalendarEventResponse occurrence(GoogleEvent master, Occurrence occurrence, Set<UUID> editable,
-                                                    ZoneId familyZone) {
-        GoogleEvent source = occurrence.source();
-        boolean allDay = occurrence.startDate() != null;
-        return response(source, master.getId() + ":" + occurrence.originalStart(), master.getId(),
-                occurrence.originalStart(), master.getRecurrence(), allDay,
-                allDay ? occurrence.startDate().toString() : occurrence.start().toString(),
-                allDay ? occurrence.endDate().toString() : occurrence.end().toString(),
-                editable, familyZone);
-    }
-
-    private static CalendarEventResponse response(GoogleEvent source, String occurrenceId, UUID seriesId,
-                                                  String originalStart, String[] recurrence, boolean allDay,
-                                                  String start, String end, Set<UUID> editable,
-                                                  ZoneId familyZone) {
-        GoogleCalendar calendar = source.getCalendar();
-        return new CalendarEventResponse(
-                source.getId(),
-                occurrenceId,
-                calendar.getId(),
-                calendar.getColor(),
-                source.getGoogleEventId(),
-                source.getEtag(),
-                seriesId,
-                originalStart,
-                seriesId != null,
-                recurrence == null ? null : List.of(recurrence),
-                source.getTitle() == null || source.getTitle().isBlank() ? NO_TITLE : source.getTitle(),
-                source.getDescription(),
-                source.getLocation(),
-                source.getHtmlLink(),
-                allDay,
-                start,
-                end,
-                source.getTimeZone() != null ? source.getTimeZone() : zoneOf(calendar, familyZone).getId(),
-                source.getMemberIds() == null ? List.of() : Arrays.asList(source.getMemberIds()),
-                source.getStatus().name().toLowerCase(Locale.ROOT),
-                editable.contains(calendar.getId()));
-    }
-
     /** A response and the row it came from: the single event, or the series' master. */
     private record Found(CalendarEventResponse response, GoogleEvent row) {
     }
@@ -237,17 +190,6 @@ public class CalendarQueryService {
             return candidate.row().isOrganizerSelf();
         }
         return candidate.response().canEdit() && !current.response().canEdit();
-    }
-
-    private static ZoneId zoneOf(GoogleCalendar calendar, ZoneId familyZone) {
-        if (calendar.getTimeZone() == null) {
-            return familyZone;
-        }
-        try {
-            return ZoneId.of(calendar.getTimeZone());
-        } catch (java.time.DateTimeException e) {
-            return familyZone;
-        }
     }
 
     private static Instant startInstant(CalendarEventResponse event, ZoneId familyZone) {

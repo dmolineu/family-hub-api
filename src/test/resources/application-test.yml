@@ -28,6 +28,9 @@ google:
   calendar:
     # Tests sync calendars themselves; the poller never fires on its own.
     poll-initial-delay: PT1H
+    # Nor right after a write: a sync racing a test's own writes would make results depend
+    # on timing. Tests check that the sync was asked for instead.
+    sync-on-request: false
   oauth:
     client-id: test-client-id
     client-secret: test-client-secret

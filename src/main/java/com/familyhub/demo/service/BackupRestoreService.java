@@ -122,7 +122,8 @@ public class BackupRestoreService {
         restoreMeals(document.meals(), family, recipes);
         Map<String, ChoreTemplate> chores = restoreChores(document.chores(), family, members);
         restoreActivity(document.activity(), family, members, chores);
-        restoreEvents(document.events(), family, members);
+        // Phase 4: events live in Google Calendar; an older file's events are left out, since
+        // writing them again could double what Google already holds.
         int themePacks = themePackService.replaceAll(document.themePacks(), family);
         int avatarPacks = avatarPackService.replaceAll(document.avatarPacks(), family);
         int rewards = rewardService.replaceAll(document.rewards(), family);
@@ -134,11 +135,12 @@ public class BackupRestoreService {
                 document.lists().lists().size(),
                 document.recipes().size(),
                 document.meals().size(),
-                document.events().size(),
+                0,
                 themePacks,
                 avatarPacks,
                 rewards,
-                followedTeams
+                followedTeams,
+                document.events().size()
         );
     }
 
@@ -197,17 +199,7 @@ public class BackupRestoreService {
             }
         }
 
-        Set<String> parentRefs = new HashSet<>();
-        document.events().stream().filter(e -> e.recurringEvent() == null).forEach(e -> parentRefs.add(e.ref()));
-        for (EventBackup event : document.events()) {
-            if (!memberRefs.contains(event.member())) {
-                throw new BadRequestException("Event \"" + event.title() + "\" refers to an unknown member.");
-            }
-            if (event.recurringEvent() != null && !parentRefs.contains(event.recurringEvent())) {
-                throw new BadRequestException(
-                        "Event \"" + event.title() + "\" refers to an unknown recurring event.");
-            }
-        }
+        // Events are not restored (Phase 4), so their references are not checked.
     }
 
     // ---------------------------------------------------------------- members and wipe
@@ -258,7 +250,7 @@ public class BackupRestoreService {
         choreActivityRepository.deleteByFamily(family);
         chorePeriodCompletionRepository.deleteByFamily(family);
         choreTemplateRepository.deleteByFamily(family);
-        calendarEventRepository.deleteNativeByFamily(family);
+        // The family's own events are kept: until they are copied to Google they live only here.
         sharedListItemRepository.deleteByFamilyId(family.getId());
         sharedListRepository.deleteByFamily(family);
         listCategoryRepository.deleteByFamily(family);
@@ -438,43 +430,6 @@ public class BackupRestoreService {
             activity.setOccurredAt(backup.occurredAt());
             choreActivityRepository.save(activity);
         }
-    }
-
-    private void restoreEvents(List<EventBackup> backups, Family family, Map<String, FamilyMember> members) {
-        Map<String, CalendarEvent> parents = new HashMap<>();
-        // Parents and one-offs first; exception rows need their parent's new id.
-        for (EventBackup backup : backups) {
-            if (backup.recurringEvent() == null) {
-                parents.put(backup.ref(), calendarEventRepository.save(toEvent(backup, family, members, null)));
-            }
-        }
-        for (EventBackup backup : backups) {
-            if (backup.recurringEvent() != null) {
-                calendarEventRepository.save(toEvent(backup, family, members, parents.get(backup.recurringEvent())));
-            }
-        }
-    }
-
-    private static CalendarEvent toEvent(
-            EventBackup backup, Family family, Map<String, FamilyMember> members, CalendarEvent parent) {
-        CalendarEvent event = new CalendarEvent();
-        event.setFamily(family);
-        event.setMember(members.get(backup.member()));
-        event.setTitle(backup.title());
-        event.setDate(backup.date());
-        event.setEndDate(backup.endDate());
-        event.setStartTime(backup.startTime());
-        event.setEndTime(backup.endTime());
-        event.setAllDay(backup.allDay());
-        event.setLocation(backup.location());
-        event.setDescription(backup.description());
-        event.setRecurrenceRule(backup.recurrenceRule());
-        event.setRecurringEvent(parent);
-        event.setOriginalDate(backup.originalDate());
-        event.setCancelled(backup.cancelled());
-        event.setExdates(backup.exdates());
-        event.setSource(EventSource.NATIVE);
-        return event;
     }
 
     private Family managedFamily(UUID familyId) {

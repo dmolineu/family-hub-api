@@ -26,7 +26,8 @@ import java.util.List;
  * are never part of it; nor are screensaver photos, which would make the file huge
  * (they are files in the family's photo folder, backed up with that folder, and a
  * restore leaves them be).
- * Google-synced calendar events are left out because they re-sync. The {@code ref}
+ * Calendar events are left out: since Phase 4 they live in Google Calendar. {@code events}
+ * is kept so older files still read; a restore skips what they hold. The {@code ref}
  * fields are the ids at export time and only serve to link rows inside the document; a
  * restore assigns new ids.
  */

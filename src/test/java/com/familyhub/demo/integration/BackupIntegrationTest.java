@@ -142,7 +142,8 @@ class BackupIntegrationTest {
                 .andExpect(jsonPath("$.recipes.length()").value(26))
                 .andExpect(jsonPath("$.meals.length()").value(1))
                 .andExpect(jsonPath("$.meals[0].entries[0].titleSnapshot").value("Sheet-Pan Chicken Fajitas"))
-                .andExpect(jsonPath("$.events.length()").value(3))
+                // Phase 4: events live in Google Calendar, so a backup no longer carries them.
+                .andExpect(jsonPath("$.events.length()").value(0))
                 .andReturn().getResponse().getContentAsString();
 
         // refs tie rows together inside the document
@@ -151,8 +152,6 @@ class BackupIntegrationTest {
         assertThat(applesCategory).isEqualTo(produceRef);
         String fajitasRef = JsonPath.read(backup, "$.recipes[?(@.title == 'Sheet-Pan Chicken Fajitas')].ref").toString();
         assertThat(JsonPath.read(backup, "$.meals[0].entries[0].recipe").toString()).isEqualTo(fajitasRef.replaceAll("[\\[\\]\"]", ""));
-        String pianoRef = JsonPath.read(backup, "$.events[?(@.title == 'Piano')].ref").toString();
-        assertThat(JsonPath.read(backup, "$.events[?(@.title == 'Piano (moved)')].recurringEvent").toString()).isEqualTo(pianoRef);
         String aliceRefBefore = JsonPath.read(backup, "$.members[?(@.name == 'Alice')].ref").toString();
 
         // ----- change things: lose Bob, lose the list, add noise -----
@@ -174,7 +173,12 @@ class BackupIntegrationTest {
                 .andExpect(jsonPath("$.data.lists").value(1))
                 .andExpect(jsonPath("$.data.recipes").value(26))
                 .andExpect(jsonPath("$.data.meals").value(1))
-                .andExpect(jsonPath("$.data.events").value(3));
+                .andExpect(jsonPath("$.data.events").value(0))
+                .andExpect(jsonPath("$.data.eventsSkipped").value(0));
+        // The family's own events were not wiped: until they are copied to Google they live only here.
+        // Piano and its moved date remain; Bob's Dentist went when Bob was deleted.
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM calendar_event WHERE family_id = ? AND source = 'NATIVE'",
+                Integer.class, familyId)).isEqualTo(2);
 
         // ----- the second export describes the first state -----
         String again = mockMvc.perform(get("/api/backup").header("Authorization", "Bearer " + token))
@@ -189,8 +193,7 @@ class BackupIntegrationTest {
                 .andExpect(jsonPath("$.lists.lists[0].items[?(@.text == 'Milk')].completed").value(true))
                 .andExpect(jsonPath("$.recipes.length()").value(26))
                 .andExpect(jsonPath("$.meals[0].entries[0].titleSnapshot").value("Sheet-Pan Chicken Fajitas"))
-                .andExpect(jsonPath("$.events.length()").value(3))
-                .andExpect(jsonPath("$.events[?(@.title == 'Piano (moved)')].originalDate").value("2026-10-27"))
+                .andExpect(jsonPath("$.events.length()").value(0))
                 .andReturn().getResponse().getContentAsString();
 
         // Alice kept her id (matched by name), so her Google connection would survive a restore.
@@ -202,6 +205,42 @@ class BackupIntegrationTest {
         List<String> categoryOfApples = JsonPath.read(again, "$.lists.lists[0].items[?(@.text == 'Apples')].category");
         List<String> produceAfter = JsonPath.read(again, "$.lists.categories[?(@.name == 'Produce')].ref");
         assertThat(categoryOfApples).containsExactly(produceAfter.get(0));
+    }
+
+    @Test
+    void restore_leavesAnOlderFilesEventsOutAndSaysHowMany() throws Exception {
+        String registration = mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username": "%s", "password": "TestPassword123!", "familyName": "Old File Family",
+                                 "members": [{"name": "Alice", "color": "coral"}]}
+                                """.formatted("o" + System.nanoTime())))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String token = JsonPath.read(registration, "$.data.token");
+
+        // Events in Google may already hold these; writing them again could double them.
+        mockMvc.perform(post("/api/backup/restore")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"version": 1, "exportedAt": "2026-10-23T18:00:00Z",
+                                 "family": {"name": "Old File Family"},
+                                 "members": [{"ref": "m1", "name": "Alice", "color": "coral"}],
+                                 "chores": [],
+                                 "lists": {"showCompletedByDefault": true, "categories": [], "lists": []},
+                                 "recipes": [], "meals": [],
+                                 "events": [{"ref": "e1", "title": "Dentist", "date": "2026-10-22", "startTime": "09:00",
+                                             "endTime": "10:00", "allDay": false, "member": "m1", "cancelled": false},
+                                            {"ref": "e2", "title": "Trip", "date": "2026-10-24", "startTime": "00:00",
+                                             "endTime": "00:00", "allDay": true, "member": "m1", "cancelled": false}]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.events").value(0))
+                .andExpect(jsonPath("$.data.eventsSkipped").value(2));
+
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM calendar_event e JOIN family f ON f.id = e.family_id "
+                + "WHERE f.name = 'Old File Family'", Integer.class)).isZero();
     }
 
     @Test

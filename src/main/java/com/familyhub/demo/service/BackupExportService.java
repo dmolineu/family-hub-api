@@ -94,7 +94,8 @@ public class BackupExportService {
                 lists(family),
                 recipes(family),
                 meals(family),
-                events(family),
+                // Phase 4: events live in Google Calendar, which keeps them.
+                List.of(),
                 themePackService.exportAll(family),
                 activity(family),
                 avatarPackService.exportAll(family),
@@ -222,34 +223,6 @@ public class BackupExportService {
                                         e.getNoteSnapshot()
                                 ))
                                 .toList()
-                ))
-                .toList();
-    }
-
-    private List<EventBackup> events(Family family) {
-        // Parents and one-offs first so a restore can resolve exception rows in order.
-        return calendarEventRepository.findByFamily(family).stream()
-                .filter(e -> e.getSource() == EventSource.NATIVE)
-                .sorted(Comparator
-                        .comparing((CalendarEvent e) -> e.getRecurringEvent() != null)
-                        .thenComparing(CalendarEvent::getDate)
-                        .thenComparing(e -> e.getId().toString()))
-                .map(e -> new EventBackup(
-                        ref(e.getId()),
-                        e.getTitle(),
-                        e.getDate(),
-                        e.getEndDate(),
-                        e.getStartTime(),
-                        e.getEndTime(),
-                        e.isAllDay(),
-                        ref(e.getMember().getId()),
-                        e.getLocation(),
-                        e.getDescription(),
-                        e.getRecurrenceRule(),
-                        e.getRecurringEvent() == null ? null : ref(e.getRecurringEvent().getId()),
-                        e.getOriginalDate(),
-                        e.isCancelled(),
-                        e.getExdates()
                 ))
                 .toList();
     }

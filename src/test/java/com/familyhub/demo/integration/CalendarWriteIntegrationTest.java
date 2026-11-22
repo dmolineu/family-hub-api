@@ -232,6 +232,18 @@ class CalendarWriteIntegrationTest {
     }
 
     @Test
+    void aTimedSeriesRepeatingUntilADateReachesGoogleEndingAtTheEndOfThatDay() {
+        // The app's "repeat until" is a date; Google and RFC 5545 want UTC for a timed series.
+        CalendarEventResponse created = writes.create(family, new CalendarWriteRequest(null, List.of(dad.getId()),
+                "Practice", null, null, false, Instant.parse("2026-12-01T17:00:00Z"),
+                Instant.parse("2026-12-01T18:00:00Z"), null, null, "America/Los_Angeles",
+                List.of("RRULE:FREQ=DAILY;UNTIL=20261205"), false, null));
+
+        assertThat(inGoogle(hub, created.googleEventId()).getRecurrence())
+                .containsExactly("RRULE:FREQ=DAILY;UNTIL=20261206T075959Z");
+    }
+
+    @Test
     void anEditSendsBackGooglesWholeEventSoWhatTheHubDoesNotShowSurvives() {
         Event made = google.insertEvent(account, hub.getGoogleCalendarId(), new Event().setSummary("Party")
                 .setStart(new EventDateTime().setDateTime(new DateTime("2026-12-05T01:00:00Z")))

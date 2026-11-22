@@ -54,7 +54,8 @@ public class LegacyEventConverter {
         times(event, row, zone);
         if (row.getRecurrenceRule() != null) {
             List<String> lines = new ArrayList<>();
-            lines.add("RRULE:" + row.getRecurrenceRule());
+            lines.add("RRULE:" + (row.isAllDay() ? row.getRecurrenceRule()
+                    : com.familyhub.demo.google.RecurrenceLines.untilInUtc(row.getRecurrenceRule(), zone)));
             Set<LocalDate> excluded = new LinkedHashSet<>();
             if (row.getExdates() != null && !row.getExdates().isBlank()) {
                 Arrays.stream(row.getExdates().split(",")).map(String::trim).map(LocalDate::parse).forEach(excluded::add);

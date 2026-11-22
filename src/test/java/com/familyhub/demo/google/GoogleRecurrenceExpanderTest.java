@@ -104,6 +104,17 @@ class GoogleRecurrenceExpanderTest {
     }
 
     @Test
+    void aDateOnlyUntilOnATimedSeriesEndsAtTheEndOfThatDayInTheSeriesZone() {
+        // The app writes "repeat until" as a date; on a timed series it means through that day.
+        GoogleEvent daily = master("2026-11-20T17:00:00Z", "2026-11-20T18:00:00Z",
+                "RRULE:FREQ=DAILY;UNTIL=20261123");
+
+        assertThat(starts(daily, List.of(), "2026-11-01", "2026-11-30")).containsExactly(
+                Instant.parse("2026-11-20T17:00:00Z"), Instant.parse("2026-11-21T17:00:00Z"),
+                Instant.parse("2026-11-22T17:00:00Z"), Instant.parse("2026-11-23T17:00:00Z"));
+    }
+
+    @Test
     void yearlyOnTheTwentyNinthOfFebruaryOnlyFallsInLeapYears() {
         GoogleEvent leap = allDayMaster("2028-02-29", "2028-03-01", "RRULE:FREQ=YEARLY");
         assertThat(dates(leap, "2028-01-01", "2036-12-31")).containsExactly(

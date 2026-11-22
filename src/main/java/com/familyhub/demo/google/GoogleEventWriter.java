@@ -63,7 +63,10 @@ public class GoogleEventWriter {
                     .setTimeZone(zone));
         }
         if (request.recurrence() != null) {
-            event.setRecurrence(request.recurrence().isEmpty() ? null : List.copyOf(request.recurrence()));
+            String zone = event.getStart() != null && event.getStart().getTimeZone() != null
+                    ? event.getStart().getTimeZone() : fallbackZone;
+            event.setRecurrence(request.recurrence().isEmpty() ? null
+                    : List.copyOf(RecurrenceLines.normalize(request.recurrence(), !request.allDay(), zoneOf(zone))));
         }
         Event.ExtendedProperties properties = event.getExtendedProperties() != null
                 ? event.getExtendedProperties() : new Event.ExtendedProperties();
@@ -96,6 +99,14 @@ public class GoogleEventWriter {
             return json.fromString(json.toString(event), Event.class);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        }
+    }
+
+    private static java.time.ZoneId zoneOf(String zone) {
+        try {
+            return java.time.ZoneId.of(zone);
+        } catch (RuntimeException e) {
+            return java.time.ZoneOffset.UTC;
         }
     }
 

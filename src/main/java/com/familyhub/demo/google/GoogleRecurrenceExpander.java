@@ -159,7 +159,7 @@ public class GoogleRecurrenceExpander {
         TreeSet<Instant> starts = new TreeSet<>();
         for (String rule : lines.rules()) {
             try {
-                Recur<ZonedDateTime> recur = new Recur<>(rule);
+                Recur<ZonedDateTime> recur = new Recur<>(RecurrenceLines.untilInUtc(rule, zone));
                 for (ZonedDateTime date : recur.getDates(seed, periodStart, periodEnd, MAX_PER_SERIES + 1)) {
                     starts.add(date.toInstant());
                 }
